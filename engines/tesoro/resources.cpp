@@ -20,6 +20,7 @@
  */
 
 #include "tesoro/resources.h"
+#include "common/ptr.h"
 
 namespace Tesoro {
 
@@ -59,7 +60,7 @@ void Archive::open() {
 }
 
 Bytes Archive::read(Common::String name) {
-	Common::SeekableReadStream *in = stream(name);
+	Common::ScopedPtr<Common::SeekableReadStream> in(stream(name));
 	Bytes b;
 	b.resize(in->size());
 
@@ -122,11 +123,14 @@ Animation Reader::bank() {
 	if ((u32(curPos) & 0xffffff) != 0x4d4e41 || (u32(curPos) >> 24) > 1)
 		error("Tesoro: Invalid ANM header.");
 
+	const bool isFont = (u32(curPos) >> 24) == 0;
 	uint frameCount = u16(curPos + 4);
 	uint imageCount = u16(curPos + 8);
 	if (frameCount > 10000 || imageCount > 10000)
 		error("Tesoro: Invalid ANM counts.");
 	Animation bank;
+	bank.isFont = isFont;
+	bank.interpolateMovement = !isFont && (u16(curPos + 24) & 0xff) == 1;
 	bank.name = str(curPos + 12, 12);
 	curPos += 28; // advance past the header
 	// Read frame description
@@ -149,6 +153,19 @@ Animation Reader::bank() {
 		check(curPos + 24, extra);
 		curPos += 24 + extra;
 		bank.frames.push_back(f);
+	}
+
+	// makes movement relative to the first frame.
+	// These are sequence positions, not per-frame velocity increments.
+	if (!isFont && !bank.frames.empty()) {
+		const int16 originX = bank.frames[0].dx;
+		const int16 originY = bank.frames[0].dy;
+		for (uint i = 1; i < bank.frames.size(); ++i) {
+			bank.frames[i].dx = int16(uint16(bank.frames[i].dx) - uint16(originX));
+			bank.frames[i].dy = int16(uint16(bank.frames[i].dy) - uint16(originY));
+		}
+		bank.frames[0].dx = 0;
+		bank.frames[0].dy = 0;
 	}
 
 	for (uint i = 0; i < imageCount; ++i) {
@@ -271,7 +288,7 @@ Menu readMenu(const Bytes &data) {
 				error("Tesoro: missing menu action");
 			MenuButton button;
 			button.name = name;
-			button.action = params[2]; // Constructor 0x417ad0, dispatch 0x417b40.
+			button.action = params[2];
 			int x = (int32)r.u32(at) + 320 + f.hitX;
 			int y = 240 - (int32)r.u32(at + 4) - f.hitY;
 			button.bounds = Common::Rect(x, y, x + f.hitW, y + f.hitH);

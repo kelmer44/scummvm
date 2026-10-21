@@ -2,6 +2,7 @@ MODULE := engines/tesoro
 
 MODULE_OBJS = \
 	tesoro.o \
+	animation.o \
 	console.o \
 	metaengine.o \
 	resources.o

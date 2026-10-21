@@ -60,6 +60,8 @@ struct Frame {
 };
 
 struct Animation {
+    bool isFont = false;
+    bool interpolateMovement = false;
     Common::String name;
     Common::Array<Frame> frames;
     Common::Array<Common::SharedPtr<Image>> images;

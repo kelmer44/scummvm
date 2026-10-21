@@ -54,6 +54,7 @@ private:
 	State _state = kMainMenu;
 	Menu _mainMenu, _newGameMenu;
 	Video::AVIDecoder _movie;
+	uint32 _deadline = 0, _pausedAt = 0;
 	uint _decodedMovieFrames = 0;
 
 	void init();
@@ -66,6 +67,7 @@ private:
 protected:
 	// Engine APIs
 	Common::Error run() override;
+	void pauseEngineIntern(bool pause) override;
 
 public:
 	Graphics::Screen *_screen = nullptr;

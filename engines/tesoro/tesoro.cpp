@@ -33,6 +33,7 @@
 #include "tesoro/tesoro.h"
 #include "tesoro/detection.h"
 #include "tesoro/console.h"
+#include "graphics/framelimiter.h"
 
 namespace Tesoro {
 
@@ -76,10 +77,18 @@ void TesoroEngine::init() {
 bool TesoroEngine::startMovie(uint number, State state) {
 	_movie.close();
 	Common::String filename = Common::String::format("data%02u.bin", number);
-	Common::FSNode file(ConfMan.getPath("path").join("bin").join(filename));
-	Common::SeekableReadStream *stream = file.createReadStream();
+	Common::Path gamePath = ConfMan.getPath("path");
+	Common::Array<Common::Path> directories;
+	if (ConfMan.hasKey("tesoro_movie_path"))
+		directories.push_back(ConfMan.getPath("tesoro_movie_path"));
+	directories.push_back(gamePath);
+	directories.push_back(gamePath.join("bin"));
+	directories.push_back(gamePath.join("Install").join("bin"));
+	Common::SeekableReadStream *stream = nullptr;
+	for (uint i = 0; i < directories.size() && !stream; ++i)
+		stream = Common::FSNode(directories[i].join(filename)).createReadStream();
 	if (!stream) {
-		warning("Tesoro: cannot open movie %s", file.getPath().toString().c_str());
+		warning("Tesoro: cannot open movie %s", filename.c_str());
 		return false;
 	}
 	// Validate before transferring ownership: AVI only takes the stream after
@@ -95,8 +104,9 @@ bool TesoroEngine::startMovie(uint number, State state) {
 
 	stream->seek(0);
 	if (!_movie.loadStream(stream)) {
+		// After the validated RIFF/AVI header, AVIDecoder owns the stream,
+		// including when a later parse/codec failure closes it.
 		warning("Tesoro: cannot decode movie %s", filename.c_str());
-		delete stream;
 		return false;
 	}
 
@@ -111,7 +121,7 @@ void TesoroEngine::stopMovie() {
 	_movie.close();
 	if (_state == kNewGameMovie) {
 		_state = kCensorship;
-		// _deadline = _system->getMillis() + 5500; // FANMMENU/nuevo in ANIMS.DLG.
+		_deadline = _system->getMillis() + 5500; // FANMMENU/nuevo in ANIMS.DLG.
 	} else {
 		_state = kMainMenu;
 	}
@@ -175,21 +185,19 @@ Common::Error TesoroEngine::run() {
 	setDebugger(new Console());
 	init();
 
-	// If a savegame was selected from the launcher, load it
-	int saveSlot = ConfMan.getInt("save_slot");
-	if (saveSlot != -1)
-		(void)loadGameState(saveSlot);
-
-
-	Common::Event e;
+	// A host pacing limit; movie decoding and card duration use elapsed time.
+	Graphics::FrameLimiter limiter(_system, 60, false);
+	limiter.initialize();
+	Common::Event event;
 	while (!shouldQuit()) {
-		while (_eventMan->pollEvent(e)) {
-			handleEvent(e);
-		 }
-		if(shouldQuit())
+		limiter.startFrame();
+		while (_eventMan->pollEvent(event))
+			handleEvent(event);
+		if (shouldQuit())
 			break;
-		 update();
-		 draw();
+		update();
+		draw();
+		limiter.delayBeforeSwap();
 		_screen->update();
 	}
 	_movie.close();
@@ -198,22 +206,19 @@ Common::Error TesoroEngine::run() {
 }
 
 void TesoroEngine::draw() {
-	if(_state == kMainMenu) {
-
+	if (_state != kStartupMovie && _state != kNewGameMovie) {
 		const Image *background = _state == kMainMenu ? _mainMenu.background.get() : _newGameMenu.background.get();
 		if (_state == kCensorship && _newGameMenu.censorship)
 			background = _newGameMenu.censorship.get();
 		_screen->copyRectToSurface(background->pixels.data(), background->w * sizeof(uint32), 0, 0, 640, 480);
-
-		// auto background = readBackground(_archive.read("PUERTO.LVL"));
-		// _screen->copyRectToSurface(background->pixels.data(), background->w * sizeof(uint32), 0, 0, 640, 480);
-	// _system->updateScreen();
 	}
-
 	_screen->makeAllDirty();
+
 }
 
 void TesoroEngine::update() {
+	if (isPaused())
+		return;
 	if (_state == kStartupMovie || _state == kNewGameMovie) {
 		if (_movie.endOfVideo()) {
 			stopMovie();
@@ -236,15 +241,18 @@ void TesoroEngine::update() {
 }
 
 
-Common::Error TesoroEngine::syncGame(Common::Serializer &s) {
-	// The Serializer has methods isLoading() and isSaving()
-	// if you need to specific steps; for example setting
-	// an array size after reading it's length, whereas
-	// for saving it would write the existing array's length
-	int dummy = 0;
-	s.syncAsUint32LE(dummy);
+void TesoroEngine::pauseEngineIntern(bool pause) {
+	Engine::pauseEngineIntern(pause);
+	_movie.pauseVideo(pause);
+	if (pause)
+		_pausedAt = _system->getMillis();
+	else if (_state == kCensorship)
+		_deadline += _system->getMillis() - _pausedAt;
+}
 
-	return Common::kNoError;
+Common::Error TesoroEngine::syncGame(Common::Serializer &s) {
+	return Common::Error(s.isLoading() ? Common::kReadingFailed : Common::kWritingFailed,
+		"Tesoro save state is not implemented yet.");
 }
 
 } // End of namespace Tesoro
