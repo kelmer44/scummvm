@@ -3,7 +3,8 @@ MODULE := engines/tesoro
 MODULE_OBJS = \
 	tesoro.o \
 	console.o \
-	metaengine.o
+	metaengine.o \
+	resources.o
 
 # This module can be built as a plugin
 ifeq ($(ENABLE_TESORO), DYNAMIC_PLUGIN)
