@@ -22,17 +22,19 @@
 namespace Tesoro {
 
 const PlainGameDescriptor tesoroGames[] = {
-	{ "tesoro", "Tesoro" },
+	{ "tesoro", "El Tesoro de Isla Alcachofa" },
 	{ 0, 0 }
 };
 
 const ADGameDescription gameDescriptions[] = {
+	// Spanish Windows CD release.
 	{
 		"tesoro",
 		nullptr,
-		AD_ENTRY1s("file1.bin", "00000000000000000000000000000000", 11111),
-		Common::EN_ANY,
-		Common::kPlatformDOS,
+		AD_ENTRY2s("TESORO.TRE", "40bd64d7df589c2100c529f7a3033087", 67788,
+			"TESORO.DAT", "8fb27fd8a3b31915053372e9d9f7dded", 263612966),
+		Common::ES_ESP,
+		Common::kPlatformWindows,
 		ADGF_UNSTABLE,
 		GUIO1(GUIO_NONE)
 	},
