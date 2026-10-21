@@ -217,4 +217,65 @@ Common::SharedPtr<Image> readBackground(const Bytes &data) {
 	return bank.images[bank.frames[0].image];
 }
 
+Menu readMenu(const Bytes &data) {
+	Reader r(data);
+	if (r.u32(0) != 0x014c564c || !r.u32(8) || r.u32(8) > 10000 || r.u32(4) > 10000)
+		error("Tesoro: invalid menu LVL");
+
+	r.curPos = 16;
+	Common::Array<Animation> banks;
+	for (uint i = 0; i < r.u32(8); ++i)
+		banks.push_back(r.bank());
+	if (banks[0].frames.empty() || banks[0].frames[0].image < 0)
+		error("Tesoro: menu has no background");
+	Menu menu;
+	menu.background = banks[0].images[banks[0].frames[0].image];
+	if (menu.background->w != 640 || menu.background->h != 480)
+		error("Tesoro: unexpected menu dimensions");
+
+	for (uint group = 0; group < r.u32(4); ++group) {
+		r.check(r.curPos, 40);
+		uint count = r.u16(r.curPos + 32);
+		r.curPos += 40;
+		for (uint i = 0; i < count; ++i) {
+			uint32 at = r.curPos;
+			r.check(at, 32);
+			uint kind = r.u32(at + 24), size = r.u32(at + 28);
+			Bytes refs = r.bytes(at + 11, 1);
+			Bytes params = r.bytes(at + 32, size);
+			Bytes bankRefs = r.bytes(at + 32 + size, refs[0]);
+			r.curPos = at + 32 + size + refs[0];
+			Common::String name = r.str(at + 12, 12);
+			if (kind != 25 && name != "CENSURA")
+				continue;
+			if (params.empty() || bankRefs.empty() || bankRefs[0] >= banks.size())
+				error("Tesoro: invalid menu bank reference");
+			const Animation &bank = banks[bankRefs[0]];
+			if (params[0] >= bank.frames.size())
+				error("Tesoro: invalid menu frame");
+			const Frame &f = bank.frames[params[0]];
+			if (name == "CENSURA") {
+				if (f.image < 0)
+					error("Tesoro: missing censorship image");
+				menu.censorship = bank.images[f.image];
+				if (menu.censorship->w != 640 || menu.censorship->h != 480)
+					error("Tesoro: unexpected censorship dimensions");
+				continue;
+			}
+			if (params.size() < 3)
+				error("Tesoro: missing menu action");
+			MenuButton button;
+			button.name = name;
+			button.action = params[2]; // Constructor 0x417ad0, dispatch 0x417b40.
+			int x = (int32)r.u32(at) + 320 + f.hitX;
+			int y = 240 - (int32)r.u32(at + 4) - f.hitY;
+			button.bounds = Common::Rect(x, y, x + f.hitW, y + f.hitH);
+			menu.buttons.push_back(button);
+		}
+	}
+	if (r.curPos != data.size())
+		error("Tesoro: trailing menu data");
+	return menu;
+}
+
 } // End of namespace Tesoro

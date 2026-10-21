@@ -56,9 +56,9 @@ Common::String TesoroEngine::getGameId() const {
 
 void TesoroEngine::init() {
 	_archive.open();
+	_mainMenu = readMenu(_archive.read("PRINCIPAL.LVL"));
 	_state = kMainMenu;
 	startMovie(0, kStartupMovie);
-
 }
 
 bool TesoroEngine::startMovie(uint number, State state) {
@@ -151,8 +151,13 @@ Common::Error TesoroEngine::run() {
 void TesoroEngine::draw() {
 	if(_state == kMainMenu) {
 
-		auto background = readBackground(_archive.read("PUERTO.LVL"));
+		const Image *background = _state == kMainMenu ? _mainMenu.background.get() : _newGameMenu.background.get();
+		if (_state == kCensorship && _newGameMenu.censorship)
+			background = _newGameMenu.censorship.get();
 		_screen->copyRectToSurface(background->pixels.data(), background->w * sizeof(uint32), 0, 0, 640, 480);
+
+		// auto background = readBackground(_archive.read("PUERTO.LVL"));
+		// _screen->copyRectToSurface(background->pixels.data(), background->w * sizeof(uint32), 0, 0, 640, 480);
 	// _system->updateScreen();
 	}
 

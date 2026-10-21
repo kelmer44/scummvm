@@ -24,6 +24,7 @@
 
 #include "common/array.h"
 #include "common/file.h"
+#include "common/rect.h"
 
 // Resource definitions for the Tesoro engine
 namespace Tesoro {
@@ -52,7 +53,9 @@ struct Image {
 };
 
 struct Frame {
-    uint16 x, y, dx, dy, image;
+    int16 x, y, dx, dy, image;
+    int16 hitX, hitY;
+    uint16 hitW, hitH;
     uint16 duration, type;
 };
 
@@ -63,6 +66,19 @@ struct Animation {
 
 };
 
+struct MenuButton {
+    Common::String name;
+    Common::Rect bounds;
+    uint action;
+};
+
+struct Menu {
+    Common::SharedPtr<Image> background;
+    Common::SharedPtr<Image> censorship;
+    Common::Array<MenuButton> buttons;
+};
+
+Menu readMenu(const Bytes &data);
 Common::SharedPtr<Image> readBackground(const Bytes &data);
 Animation readAnimation(const Bytes &data);
 } // End of namespace Tesoro

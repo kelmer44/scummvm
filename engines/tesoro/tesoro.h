@@ -52,6 +52,7 @@ private:
 
 	enum State { kStartupMovie, kMainMenu, kNewGameMovie, kCensorship, kDifficultyMenu };
 	State _state = kMainMenu;
+	Menu _mainMenu, _newGameMenu;
 	Video::AVIDecoder _movie;
 	uint _decodedMovieFrames = 0;
 
