@@ -34,17 +34,21 @@
 #include "tesoro/detection.h"
 #include "tesoro/console.h"
 #include "graphics/framelimiter.h"
+#include "audio/audiostream.h"
+#include "audio/decoders/wave.h"
 
 namespace Tesoro {
 
 TesoroEngine *g_engine;
 
 TesoroEngine::TesoroEngine(OSystem *syst, const ADGameDescription *gameDesc) : Engine(syst),
-	_gameDescription(gameDesc), _randomSource("Tesoro") {
+	_gameDescription(gameDesc), _randomSource("Tesoro"), _script(_catalog, *this) {
 	g_engine = this;
 }
 
 TesoroEngine::~TesoroEngine() {
+	_mixer->stopHandle(_speech);
+	_mixer->stopHandle(_effect);
 	_movie.close();
 	delete _screen;
 }
@@ -119,7 +123,9 @@ bool TesoroEngine::startMovie(uint number, State state) {
 void TesoroEngine::stopMovie() {
 	debug("Tesoro: stopping movie");
 	_movie.close();
-	if (_state == kNewGameMovie) {
+	if (_state == kAdventureMovie) {
+		_state = kAdventure;
+	} else if (_state == kNewGameMovie) {
 		_state = kCensorship;
 		_deadline = _system->getMillis() + 5500; // FANMMENU/nuevo in ANIMS.DLG.
 	} else {
@@ -133,9 +139,22 @@ void TesoroEngine::handleEvent(const Common::Event &event) {
 		_movie.close();
 		return;
 	}
-	if (_state == kStartupMovie || _state == kNewGameMovie) {
+	if (_state == kStartupMovie || _state == kNewGameMovie || _state == kAdventureMovie) {
 		if (event.type == Common::EVENT_KEYDOWN && event.kbd.keycode == Common::KEYCODE_ESCAPE)
 			stopMovie();
+		return;
+	}
+	if (_state == kAdventure) {
+		if (event.type == Common::EVENT_KEYDOWN && event.kbd.keycode == Common::KEYCODE_ESCAPE) {
+			if (!_script.failure.empty())
+				leaveAdventure();
+			else
+				openMainMenuDialog();
+		} else if (_wait == kWaitSpeech && (event.type == Common::EVENT_LBUTTONDOWN ||
+		           (event.type == Common::EVENT_KEYDOWN && event.kbd.keycode == Common::KEYCODE_SPACE))) {
+			_mixer->stopHandle(_speech);
+			_speechSkipped = true;
+		}
 		return;
 	}
 	if (event.type == Common::EVENT_KEYDOWN && event.kbd.keycode == Common::KEYCODE_ESCAPE) {
@@ -159,6 +178,9 @@ void TesoroEngine::handleEvent(const Common::Event &event) {
 			_state = kNewGameMovie;
 			if (!startMovie(1, kNewGameMovie))
 				stopMovie();
+			break;
+		case 3:
+			startAdventure();
 			break;
 		case 1: {
 			GUI::MessageDialog dialog(Common::U32String("Cargar partidas todavía no está disponible."));
@@ -184,6 +206,7 @@ Common::Error TesoroEngine::run() {
 	// Set the engine's debugger console
 	setDebugger(new Console());
 	init();
+	_lastHostTime = _system->getMillis();
 
 	// A host pacing limit; movie decoding and card duration use elapsed time.
 	Graphics::FrameLimiter limiter(_system, 60, false);
@@ -206,7 +229,13 @@ Common::Error TesoroEngine::run() {
 }
 
 void TesoroEngine::draw() {
-	if (_state != kStartupMovie && _state != kNewGameMovie) {
+	if (_state == kAdventure && _objects) {
+		Common::Array<SceneSprite> sprites;
+		_objects->appendSprites(_gameTime, _camera, sprites);
+		_renderer.draw(*_screen->surfacePtr(), sprites);
+		if (!_subtitle.empty() && _font && (ConfMan.getBool("subtitles") || ConfMan.getBool("speech_mute")))
+			_renderer.drawNarration(*_screen->surfacePtr(), *_font, _subtitle, 0x001f);
+	} else if (_state != kStartupMovie && _state != kNewGameMovie && _state != kAdventureMovie) {
 		const Image *background = _state == kMainMenu ? _mainMenu.background.get() : _newGameMenu.background.get();
 		if (_state == kCensorship && _newGameMenu.censorship)
 			background = _newGameMenu.censorship.get();
@@ -217,9 +246,14 @@ void TesoroEngine::draw() {
 }
 
 void TesoroEngine::update() {
+	uint32 now = _system->getMillis();
+	uint32 elapsed = now - _lastHostTime;
+	_lastHostTime = now;
 	if (isPaused())
 		return;
-	if (_state == kStartupMovie || _state == kNewGameMovie) {
+	if (_state == kAdventure && elapsed < 500)
+		_gameTime += elapsed;
+	if (_state == kStartupMovie || _state == kNewGameMovie || _state == kAdventureMovie) {
 		if (_movie.endOfVideo()) {
 			stopMovie();
 		} else if (_movie.needsUpdate()) {
@@ -234,6 +268,15 @@ void TesoroEngine::update() {
 			}
 		}
 	}
+	else if (_state == kAdventure) {
+		_script.update();
+		if (!_script.failure.empty() && !_failureReported) {
+			_failureReported = true;
+			warning("Tesoro introduction paused: %s", _script.failure.c_str());
+			GUI::MessageDialog dialog(Common::U32String("La introducción ha llegado a una función que todavía no está implementada. Pulsa Escape para volver al menú."));
+			dialog.runModal();
+		}
+	}
 	else if (_state == kCensorship && int32(_system->getMillis() - _deadline) >= 0) {
 		_state = kDifficultyMenu;
 		CursorMan.showMouse(true);
@@ -246,8 +289,178 @@ void TesoroEngine::pauseEngineIntern(bool pause) {
 	_movie.pauseVideo(pause);
 	if (pause)
 		_pausedAt = _system->getMillis();
-	else if (_state == kCensorship)
-		_deadline += _system->getMillis() - _pausedAt;
+	else {
+		_lastHostTime = _system->getMillis();
+		if (_state == kCensorship)
+			_deadline += _lastHostTime - _pausedAt;
+	}
+}
+
+void TesoroEngine::startAdventure() {
+	_mixer->stopHandle(_speech);
+	_mixer->stopHandle(_effect);
+	_script.stop();
+	_objects.reset();
+	_requestError.clear();
+	_subtitle.clear();
+	_wait = kNoWait;
+	_failureReported = false;
+	_animationWait = nullptr;
+	_gameTime = 0;
+	_lastHostTime = _system->getMillis();
+	memset(_variables, 0, sizeof(_variables));
+	if (!_catalogLoaded) {
+		_catalog.load(_archive);
+		_font.reset(new Animation(readAnimation(_archive.read("FUENTES.ANM"))));
+		_catalogLoaded = true;
+	}
+	_harbour = readScene(_archive.read("PUERTO.LVL"));
+	RoomEntry entry;
+	if (!findRoomEntry(_harbour, entry))
+		error("Tesoro: Cannot resolve the harbour entry.");
+	_camera.setBounds(entry.bounds);
+	_camera.setPosition(entry.x, entry.y);
+	_objects.reset(new SceneObjects(_harbour, _gameTime));
+	_state = kAdventure;
+	CursorMan.showMouse(false);
+	_script.start("FANPRESENT", "main", _variables);
+	debug(1, "Tesoro: starting FANPRESENT/main at (%d,%d)", entry.x, entry.y);
+}
+
+void TesoroEngine::leaveAdventure() {
+	_script.stop();
+	_mixer->stopHandle(_speech);
+	_mixer->stopHandle(_effect);
+	_wait = kNoWait;
+	_subtitle.clear();
+	_objects.reset();
+	_state = kDifficultyMenu;
+	CursorMan.showMouse(true);
+}
+
+bool TesoroEngine::request(const Request &r) {
+	switch (r.kind) {
+	case Request::kMovie:
+		if (!startMovie(r.number, kAdventureMovie)) {
+			_requestError = Common::String::format("Cannot play introduction movie %u", r.number);
+			return false;
+		}
+		_wait = kWaitMovie;
+		return true;
+	case Request::kSpeech: {
+		if (!r.target.empty()) {
+			_requestError = "Character speech is not implemented: " + r.target;
+			return false;
+		}
+		Audio::SeekableAudioStream *audio = Audio::makeWAVStream(_archive.stream(r.textId + ".WAV"), DisposeAfterUse::YES);
+		if (!audio) {
+			_requestError = "Cannot decode speech " + r.textId;
+			return false;
+		}
+		_mixer->stopHandle(_speech);
+		_subtitle = r.text;
+		_speechSkipped = false;
+		_speechMuted = ConfMan.getBool("speech_mute");
+		_waitUntil = _gameTime + audio->getLength().msecs();
+		if (_speechMuted)
+			delete audio;
+		else
+			_mixer->playStream(Audio::Mixer::kSpeechSoundType, &_speech, audio);
+		_wait = kWaitSpeech;
+		return true;
+	}
+	case Request::kSleep:
+		_waitUntil = _gameTime + r.number;
+		_wait = kWaitSleep;
+		return true;
+	case Request::kSound: {
+		Audio::SeekableAudioStream *audio = Audio::makeWAVStream(_archive.stream(r.textId + ".WAV"), DisposeAfterUse::YES);
+		if (!audio) {
+			_requestError = "Cannot decode sound " + r.textId;
+			return false;
+		}
+		_mixer->stopHandle(_effect);
+		_mixer->playStream(Audio::Mixer::kSFXSoundType, &_effect, audio);
+		return false;
+	}
+	case Request::kNative:
+		if (r.nativeType == 1) {
+			if (r.number == 0 || r.number == 1 || r.number == 2 || r.number == 6)
+				return false;
+			if (r.number == 3) {
+				SceneObject *ship = _objects->find("BARCO");
+				if (!ship)
+					break;
+				ship->show(true);
+				if (!ship->play(0, _gameTime, 0, -1, true))
+					break;
+				return false;
+			}
+		}
+		_requestError = Common::String::format("Native action type %u ordinal %u is not implemented", r.nativeType, r.number);
+		return false;
+	case Request::kMessage: {
+		SceneObject *object = _objects->find(r.target);
+		if (!object || !r.scope.empty()) {
+			_requestError = "Unsupported object message target: " + r.target;
+			return false;
+		}
+		const Common::Array<Common::String> &w = r.words;
+		if (w.size() == 2 && (w[0] == "activate" || w[0] == "show") && (w[1] == "on" || w[1] == "off")) {
+			if (w[0] == "activate")
+				object->setActive(w[1] == "on");
+			else
+				object->show(w[1] == "on");
+			return false;
+		}
+		if (w.size() == 4 && w[0] == "play" && (w[3] == "stop" || w[3] == "play" || w[3] == "loop" || w[3] == "wait")) {
+			uint first = atoi(w[2].c_str());
+			if (object->play(atoi(w[1].c_str()), _gameTime, first, w[3] == "stop" ? int(first) : -1, w[3] == "loop")) {
+				if (w[3] == "wait") {
+					_wait = kWaitAnimation;
+					_animationWait = object;
+					return true;
+				}
+				return false;
+			}
+		}
+		_requestError = "Unsupported message to " + r.target;
+		return false;
+	}
+	default:
+		_requestError = "Unsupported media request";
+		return false;
+	}
+	_requestError = "Cannot resolve the introduction action";
+	return false;
+}
+
+bool TesoroEngine::complete() {
+	switch (_wait) {
+	case kWaitMovie:
+		if (_state == kAdventureMovie)
+			return false;
+		break;
+	case kWaitSleep:
+		if (int32(_gameTime - _waitUntil) < 0)
+			return false;
+		break;
+	case kWaitSpeech:
+		if (!_speechSkipped && (_speechMuted ? int32(_gameTime - _waitUntil) < 0 : _mixer->isSoundHandleActive(_speech)))
+			return false;
+		_mixer->stopHandle(_speech);
+		_subtitle.clear();
+		break;
+	case kWaitAnimation:
+		if (_animationWait && (_animationWait->animationState().flags & AnimationPlayer::kPlaying))
+			return false;
+		_animationWait = nullptr;
+		break;
+	default:
+		break;
+	}
+	_wait = kNoWait;
+	return true;
 }
 
 Common::Error TesoroEngine::syncGame(Common::Serializer &s) {

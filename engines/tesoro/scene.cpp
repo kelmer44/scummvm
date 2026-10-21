@@ -99,41 +99,57 @@ bool findRoomEntry(const SceneData &scene, RoomEntry &entry) {
 	return matches == 1;
 }
 
-SceneryObject::SceneryObject(const SceneObjectRecord &record, const SceneGroup &group,
+SceneObject::SceneObject(const SceneObjectRecord &record, const SceneGroup &group,
                            const SceneData &scene, uint32 now)
-	: _x(record.x), _y(record.y), _depth(uint16(record.depth + group.depthBase + 5)) {
-	if (record.kind != 3 || record.parameters.size() < 2 || record.bankIndices.empty())
-		error("Tesoro: Invalid scenery object %s.", record.name.c_str());
+	: _kind(record.kind), _nameId(encodeName(record.name)), _x(record.x), _y(record.y), _depth(uint16(record.depth + group.depthBase + 5)) {
+	if ((record.kind != 3 && record.kind != 5 && record.kind != 6 && record.kind != 9) ||
+	    record.parameters.size() < (record.kind == 5 ? 6U : 2U) || record.bankIndices.empty())
+		error("Tesoro: Invalid drawable object %s.", record.name.c_str());
 	for (uint i = 0; i < record.bankIndices.size(); ++i) {
 		uint index = record.bankIndices[i];
 		if (index >= scene.banks.size() || scene.banks[index]->isFont)
-			error("Tesoro: Invalid scenery bank for %s.", record.name.c_str());
+			error("Tesoro: Invalid drawable bank for %s.", record.name.c_str());
 		_banks.push_back(scene.banks[index]);
 		_players.push_back(Common::SharedPtr<AnimationPlayer>(new AnimationPlayer(*_banks.back())));
 	}
-	show(!_banks[0]->images.empty());
-	uint first = record.parameters[0], mode = record.parameters[1];
-	if (mode <= 3) {
-		if (mode == 0)
-			show(false);
-		if (!play(0, now, first, mode <= 1 ? int(first) : -1, mode == 3))
-			error("Tesoro: Invalid initial animation for %s.", record.name.c_str());
-		if (mode <= 1 && first < _banks[0]->frames.size()) {
-			_banks[0]->frames[first].dx = 0;
-			_banks[0]->frames[first].dy = 0;
+	if (record.kind == 3) {
+		show(!_banks[0]->images.empty());
+		uint first = record.parameters[0], mode = record.parameters[1];
+		if (mode <= 3) {
+			if (mode == 0)
+				show(false);
+			if (!play(0, now, first, mode <= 1 ? int(first) : -1, mode == 3))
+				error("Tesoro: Invalid initial animation for %s.", record.name.c_str());
+			if (mode <= 1 && first < _banks[0]->frames.size()) {
+				_banks[0]->frames[first].dx = 0;
+				_banks[0]->frames[first].dy = 0;
+			}
+		}
+	} else {
+		_flags |= 0x508;
+		show(!_banks[0]->frames.empty() && _banks[0]->frames[0].image >= 0);
+		uint first = record.parameters[record.kind == 5 ? 4 : 0];
+		if (!play(0, now, first, first))
+			error("Tesoro: Invalid initial frame for %s.", record.name.c_str());
+		if (record.kind == 5) {
+			show(true);
+			uint subtype = record.parameters[5];
+			if (subtype == 1 || subtype == 2 || subtype == 4 || subtype == 6)
+				if (!play(0, now, 0, -1, true))
+					error("Tesoro: Invalid character loop for %s.", record.name.c_str());
 		}
 	}
 }
 
-void SceneryObject::setActive(bool active) {
+void SceneObject::setActive(bool active) {
 	_flags = (_flags & ~uint32(kActive)) | (active ? kActive : 0);
 }
 
-void SceneryObject::show(bool shown) {
+void SceneObject::show(bool shown) {
 	_flags = (_flags & ~uint32(kShown)) | (shown ? kShown : 0);
 }
 
-bool SceneryObject::play(uint bank, uint32 now, uint16 first, int last,
+bool SceneObject::play(uint bank, uint32 now, uint16 first, int last,
                          bool loop, bool cacheDuration) {
 	if (bank >= _players.size() || !_players[bank]->play(now, first, last, loop, cacheDuration))
 		return false;
@@ -141,8 +157,10 @@ bool SceneryObject::play(uint bank, uint32 now, uint16 first, int last,
 	return true;
 }
 
-void SceneryObject::prepareFrame(uint32 now) {
+void SceneObject::prepareFrame(uint32 now) {
 	_players[_selected]->update(now);
+	if (_kind == 5)
+		_players[_selected]->clearMovement();
 	const Frame *frame = _players[_selected]->currentFrame();
 	if (!frame)
 		return;
@@ -152,7 +170,7 @@ void SceneryObject::prepareFrame(uint32 now) {
 	_hitBounds.bottom = add(frame->hitY, -int32(int16(frame->hitH)));
 }
 
-bool SceneryObject::sprite(const SceneView &view, SceneSprite &sprite) const {
+bool SceneObject::sprite(const SceneView &view, SceneSprite &sprite) const {
 	const AnimationPlayer &player = *_players[_selected];
 	const Frame *frame = player.currentFrame();
 	if ((_flags & (kActive | kShown)) != (kActive | kShown) || !frame || !player.currentImage())
@@ -164,16 +182,17 @@ bool SceneryObject::sprite(const SceneView &view, SceneSprite &sprite) const {
 	return true;
 }
 
-SceneScenery::SceneScenery(const SceneData &scene, uint32 now) {
+SceneObjects::SceneObjects(const SceneData &scene, uint32 now) {
 	for (uint i = 0; i < scene.groups.size(); ++i) {
 		const SceneGroup &source = scene.groups[i];
 		Group group;
 		group.parallax = source.parallax;
 		for (uint j = 0; j < source.objects.size(); ++j) {
 			const SceneObjectRecord &record = source.objects[j];
-			if (record.kind != 3)
+			if (record.kind != 3 && record.kind != 5 && record.kind != 6 && record.kind != 9)
 				continue;
-			Common::SharedPtr<SceneryObject> object(new SceneryObject(record, source, scene, now));
+			Common::SharedPtr<SceneObject> object(new SceneObject(record, source, scene, now));
+			_objects.push_back(object);
 			uint at = 0;
 			while (at < group.objects.size() && group.objects[at]->x() >= record.x)
 				++at;
@@ -183,14 +202,14 @@ SceneScenery::SceneScenery(const SceneData &scene, uint32 now) {
 	}
 }
 
-void SceneScenery::appendSprites(uint32 now, const SceneCamera &camera, Common::Array<SceneSprite> &sprites) {
+void SceneObjects::appendSprites(uint32 now, const SceneCamera &camera, Common::Array<SceneSprite> &sprites) {
 	for (uint i = 0; i < _groups.size(); ++i) {
 		const Group &group = _groups[i];
 		SceneView view = camera.groupView(group.parallax);
 		for (uint j = 0; j < group.objects.size(); ++j) {
-			SceneryObject &object = *group.objects[j];
-			if ((object.flags() & (SceneryObject::kActive | SceneryObject::kShown)) !=
-			    (SceneryObject::kActive | SceneryObject::kShown))
+			SceneObject &object = *group.objects[j];
+			if ((object.flags() & (SceneObject::kActive | SceneObject::kShown)) !=
+			    (SceneObject::kActive | SceneObject::kShown))
 				continue;
 			object.prepareFrame(now);
 			SceneSprite sprite;
@@ -198,6 +217,14 @@ void SceneScenery::appendSprites(uint32 now, const SceneCamera &camera, Common::
 				sprites.push_back(sprite);
 		}
 	}
+}
+
+SceneObject *SceneObjects::find(const Common::String &name) const {
+	uint64 id = encodeName(name);
+	for (uint i = 0; i < _objects.size(); ++i)
+		if (_objects[i]->nameId() == id)
+			return _objects[i].get();
+	return nullptr;
 }
 
 } // namespace Tesoro

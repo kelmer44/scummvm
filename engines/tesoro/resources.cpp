@@ -59,6 +59,13 @@ void Archive::open() {
 	}
 }
 
+Common::Array<Common::String> Archive::names() const {
+	Common::Array<Common::String> out;
+	for (auto i = _entries.begin(); i != _entries.end(); ++i)
+		out.push_back(i->_key);
+	return out;
+}
+
 Bytes Archive::read(Common::String name) {
 	Common::ScopedPtr<Common::SeekableReadStream> in(stream(name));
 	Bytes b;

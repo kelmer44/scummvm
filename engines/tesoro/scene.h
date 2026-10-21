@@ -63,10 +63,10 @@ struct SceneSprite {
 	uint16 depth = 0;
 };
 
-class SceneryObject {
+class SceneObject {
 public:
 	enum Flags { kActive = 2, kShown = 4, kHasAnimation = 16 };
-	SceneryObject(const SceneObjectRecord &record, const SceneGroup &group,
+	SceneObject(const SceneObjectRecord &record, const SceneGroup &group,
 	              const SceneData &scene, uint32 now);
 	void setActive(bool active);
 	void show(bool shown);
@@ -76,35 +76,41 @@ public:
 	bool sprite(const SceneView &view, SceneSprite &sprite) const;
 	const AnimationState &animationState() const { return _players[_selected]->state(); }
 	uint32 flags() const { return _flags; }
+	uint32 kind() const { return _kind; }
+	uint64 nameId() const { return _nameId; }
 	uint16 depth() const { return _depth; }
 	int32 x() const { return _x; }
 	const SceneBounds &hitBounds() const { return _hitBounds; }
 
 private:
-	SceneryObject(const SceneryObject &) = delete;
-	SceneryObject &operator=(const SceneryObject &) = delete;
+	SceneObject(const SceneObject &) = delete;
+	SceneObject &operator=(const SceneObject &) = delete;
 
 	Common::Array<Common::SharedPtr<Animation>> _banks;
 	Common::Array<Common::SharedPtr<AnimationPlayer>> _players;
 	uint _selected = 0;
+	uint32 _kind;
+	uint64 _nameId;
 	uint32 _flags = kActive | kHasAnimation;
 	int32 _x, _y;
 	uint16 _depth;
 	SceneBounds _hitBounds;
 };
 
-// The scenery portion of a scene; actor and interactive-object scheduling is separate.
-class SceneScenery {
+// Owns the drawable objects and prepares their sprite submissions.
+class SceneObjects {
 public:
-	SceneScenery(const SceneData &scene, uint32 now);
+	SceneObjects(const SceneData &scene, uint32 now);
 	void appendSprites(uint32 now, const SceneCamera &camera, Common::Array<SceneSprite> &sprites);
+	SceneObject *find(const Common::String &name) const;
 
 private:
 	struct Group {
 		int32 parallax;
-		Common::Array<Common::SharedPtr<SceneryObject>> objects;
+		Common::Array<Common::SharedPtr<SceneObject>> objects;
 	};
 	Common::Array<Group> _groups;
+	Common::Array<Common::SharedPtr<SceneObject>> _objects;
 };
 
 } // namespace Tesoro

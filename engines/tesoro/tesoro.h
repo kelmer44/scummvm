@@ -38,24 +38,51 @@
 #include "tesoro/detection.h"
 #include "tesoro/resources.h"
 #include "video/avi_decoder.h"
+#include "tesoro/script.h"
+#include "tesoro/renderer.h"
+#include "audio/mixer.h"
+#include "common/ptr.h"
 
 namespace Tesoro {
 
 struct TesoroGameDescription;
 
-class TesoroEngine : public Engine {
+class TesoroEngine : public Engine, public ScriptHost {
 private:
 	const ADGameDescription *_gameDescription;
 	Common::RandomSource _randomSource;
 
 	Archive _archive;
 
-	enum State { kStartupMovie, kMainMenu, kNewGameMovie, kCensorship, kDifficultyMenu };
+	enum State { kStartupMovie, kMainMenu, kNewGameMovie, kCensorship, kDifficultyMenu, kAdventureMovie, kAdventure };
 	State _state = kMainMenu;
 	Menu _mainMenu, _newGameMenu;
 	Video::AVIDecoder _movie;
 	uint32 _deadline = 0, _pausedAt = 0;
 	uint _decodedMovieFrames = 0;
+	Catalog _catalog;
+	ScriptVM _script;
+	SceneData _harbour;
+	Common::ScopedPtr<SceneObjects> _objects;
+	SceneCamera _camera;
+	SceneRenderer _renderer;
+	Common::SharedPtr<Animation> _font;
+	Audio::SoundHandle _speech, _effect;
+	enum Wait { kNoWait, kWaitSleep, kWaitSpeech, kWaitMovie, kWaitAnimation };
+	Wait _wait = kNoWait;
+	uint32 _gameTime = 0, _lastHostTime = 0, _waitUntil = 0;
+	SceneObject *_animationWait = nullptr;
+	Common::String _subtitle, _requestError;
+	bool _speechSkipped = false, _speechMuted = false, _failureReported = false;
+	bool _catalogLoaded = false;
+	byte _variables[32] = {};
+
+	void startAdventure();
+	void leaveAdventure();
+	bool request(const Request &request) override;
+	bool complete() override;
+	Common::String requestError() const override { return _requestError; }
+
 
 	void init();
 	bool startMovie(uint number, State state);

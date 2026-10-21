@@ -47,6 +47,7 @@ public:
 	void update(uint32 now);
 	void pause(uint32 now);
 	void resume(uint32 now);
+	void clearMovement() { _state.movementX = _state.movementY = 0; }
 
 	const AnimationState &state() const { return _state; }
 	const Frame *currentFrame() const;
