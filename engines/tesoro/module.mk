@@ -3,6 +3,7 @@ MODULE := engines/tesoro
 MODULE_OBJS = \
 	tesoro.o \
 	animation.o \
+	scene.o \
 	console.o \
 	metaengine.o \
 	resources.o

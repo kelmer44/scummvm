@@ -88,7 +88,7 @@ public:
 	uint32 curPos;
 	Reader(const Bytes &b) : _b(b), curPos(0) {}
 	void check(uint32 p, uint32 n) const {
-		if (p + n > _b.size())
+		if (p > _b.size() || n > _b.size() - p)
 			error("Tesoro: Out of bounds read.");
 	}
 	uint16 u16(uint32 p) const {
@@ -221,6 +221,75 @@ Animation readAnimation(const Bytes &data) {
 	if (r.curPos != data.size())
 		error("Tesoro: ANM trailing bytes");
 	return b;
+}
+
+uint64 encodeName(const Common::String &name) {
+	uint32 parts[2] = {0, 0};
+	bool ended = false;
+	for (uint i = 0; i < 12; ++i) {
+		byte value = !ended && i < name.size() ? byte(name[i]) : 0;
+		ended = ended || !value;
+		uint32 code = 0;
+		if (!ended)
+			code = (int8(value) < '5' ? uint32(value) + 11 : value) & 31;
+		parts[i / 6] = (parts[i / 6] << 5) | code;
+	}
+	return uint64(parts[1]) << 32 | parts[0];
+}
+
+SceneData readScene(const Bytes &data) {
+	Reader r(data);
+	r.check(0, 16);
+	if (r.u32(0) != 0x014c564c)
+		error("Tesoro: Invalid LVL header.");
+	uint32 groupCount = r.u32(4), bankCount = r.u32(8), objectCount = r.u32(12);
+	if (groupCount > 10000 || bankCount > 10000 || objectCount > 10000)
+		error("Tesoro: Invalid LVL counts.");
+	SceneData scene;
+	r.curPos = 16;
+	for (uint i = 0; i < bankCount; ++i)
+		scene.banks.push_back(Common::SharedPtr<Animation>(new Animation(r.bank())));
+	uint32 parsedObjects = 0;
+	uint16 depthBase = 0;
+	for (uint i = 0; i < groupCount; ++i) {
+		r.check(r.curPos, 40);
+		SceneGroup group;
+		group.header = r.bytes(r.curPos, 40);
+		uint count = r.u16(r.curPos + 32);
+		group.depthBase = depthBase;
+		group.depthSpan = r.u16(r.curPos + 34);
+		group.parallax = int32(r.u32(r.curPos + 36));
+		depthBase = uint16(depthBase + group.depthSpan);
+		r.curPos += 40;
+		if (count > objectCount - parsedObjects)
+			error("Tesoro: Invalid LVL object count.");
+		for (uint j = 0; j < count; ++j) {
+			r.check(r.curPos, 32);
+			SceneObjectRecord object;
+			object.x = int32(r.u32(r.curPos));
+			object.y = int32(r.u32(r.curPos + 4));
+			object.depth = int16(r.u16(r.curPos + 8));
+			object.field10 = data[r.curPos + 10];
+			uint bankRefs = data[r.curPos + 11];
+			object.name = r.str(r.curPos + 12, 12);
+			object.kind = r.u32(r.curPos + 24);
+			uint32 parameterSize = r.u32(r.curPos + 28);
+			r.curPos += 32;
+			object.parameters = r.bytes(r.curPos, parameterSize);
+			r.curPos += parameterSize;
+			object.bankIndices = r.bytes(r.curPos, bankRefs);
+			r.curPos += bankRefs;
+			for (uint k = 0; k < bankRefs; ++k)
+				if (object.bankIndices[k] >= bankCount)
+					error("Tesoro: Invalid LVL animation reference for %s.", object.name.c_str());
+			group.objects.push_back(object);
+		}
+		parsedObjects += count;
+		scene.groups.push_back(group);
+	}
+	if (parsedObjects != objectCount || r.curPos != data.size())
+		error("Tesoro: Inconsistent LVL size or object count.");
+	return scene;
 }
 
 Common::SharedPtr<Image> readBackground(const Bytes &data) {
