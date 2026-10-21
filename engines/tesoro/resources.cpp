@@ -40,6 +40,7 @@ void Archive::open() {
 		byte flags = tre.readByte();
 		char name[20];
 		tre.read(name, 19);
+		name[19] = 0;
 		// if this flag is set then they're not files
 		if (!(flags & 4))
 			continue;
@@ -139,6 +140,10 @@ Animation Reader::bank() {
 		f.dy = u16(curPos + 6);
 		f.duration = u16(curPos + 8);
 		f.image = u16(curPos + 10);
+		f.hitX = u16(curPos + 12);
+		f.hitY = u16(curPos + 14);
+		f.hitW = u16(curPos + 16);
+		f.hitH = u16(curPos + 18);
 		f.type = u16(curPos + 20);
 		uint extra = u16(curPos + 22);
 		check(curPos + 24, extra);
@@ -210,8 +215,8 @@ Common::SharedPtr<Image> readBackground(const Bytes &data) {
 	r.curPos = 16; // Skip the LVL header.
 	Animation bank = r.bank();
 
-	// This first-bank shortcut is intended for PUERTO.LVL.
-	if (bank.name != "FONDO" || bank.frames.empty() || bank.frames[0].image < 0)
+	// The first bank contains the background in the supported menu scenes.
+	if (bank.frames.empty() || bank.frames[0].image < 0)
 		error("Tesoro: expected a background bank");
 
 	return bank.images[bank.frames[0].image];

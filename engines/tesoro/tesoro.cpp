@@ -25,8 +25,10 @@
 #include "common/events.h"
 #include "common/system.h"
 #include "engines/util.h"
+#include "graphics/cursorman.h"
 #include "graphics/paletteman.h"
 #include "graphics/surface.h"
+#include "gui/message.h"
 
 #include "tesoro/tesoro.h"
 #include "tesoro/detection.h"
@@ -57,8 +59,18 @@ Common::String TesoroEngine::getGameId() const {
 void TesoroEngine::init() {
 	_archive.open();
 	_mainMenu = readMenu(_archive.read("PRINCIPAL.LVL"));
+	_newGameMenu = readMenu(_archive.read("NUEVO.LVL"));
+
+	// Temporary pointer until the original interface cursor is ported.
+	uint32 cursor[12 * 18] = {};
+	for (uint y = 0; y < 18; ++y)
+		for (uint x = 0; x <= y / 2 && x < 12; ++x)
+			cursor[y * 12 + x] = x == 0 || x == y / 2 || y == 17 ? 0xff000000 : 0xffffffff;
+	CursorMan.replaceCursor(cursor, 12, 18, 0, 0, 0, false, &_screen->format);
+
 	_state = kMainMenu;
 	startMovie(0, kStartupMovie);
+	CursorMan.showMouse(_state == kMainMenu);
 }
 
 bool TesoroEngine::startMovie(uint number, State state) {
@@ -97,10 +109,13 @@ bool TesoroEngine::startMovie(uint number, State state) {
 void TesoroEngine::stopMovie() {
 	debug("Tesoro: stopping movie");
 	_movie.close();
-
-	if(_state == kStartupMovie) {
+	if (_state == kNewGameMovie) {
+		_state = kCensorship;
+		// _deadline = _system->getMillis() + 5500; // FANMMENU/nuevo in ANIMS.DLG.
+	} else {
 		_state = kMainMenu;
 	}
+	CursorMan.showMouse(_state == kMainMenu);
 }
 
 void TesoroEngine::handleEvent(const Common::Event &event) {
@@ -111,6 +126,41 @@ void TesoroEngine::handleEvent(const Common::Event &event) {
 	if (_state == kStartupMovie || _state == kNewGameMovie) {
 		if (event.type == Common::EVENT_KEYDOWN && event.kbd.keycode == Common::KEYCODE_ESCAPE)
 			stopMovie();
+		return;
+	}
+	if (event.type == Common::EVENT_KEYDOWN && event.kbd.keycode == Common::KEYCODE_ESCAPE) {
+		if (_state == kDifficultyMenu) {
+			_state = kMainMenu;
+			CursorMan.showMouse(true);
+		} else if (_state == kMainMenu) {
+			openMainMenuDialog();
+		}
+		return;
+	}
+	if (event.type != Common::EVENT_LBUTTONDOWN || _state == kCensorship)
+		return;
+	const Menu &menu = _state == kMainMenu ? _mainMenu : _newGameMenu;
+	for (uint i = 0; i < menu.buttons.size(); ++i) {
+		const MenuButton &button = menu.buttons[i];
+		if (!button.bounds.contains(event.mouse))
+			continue;
+		switch (button.action) {
+		case 0:
+			_state = kNewGameMovie;
+			if (!startMovie(1, kNewGameMovie))
+				stopMovie();
+			break;
+		case 1: {
+			GUI::MessageDialog dialog(Common::U32String("Cargar partidas todavía no está disponible."));
+			dialog.runModal();
+			break;
+		}
+		default: {
+			GUI::MessageDialog dialog(Common::U32String("Este modo de juego todavía no está disponible."));
+			dialog.runModal();
+			break;
+		}
+		}
 		return;
 	}
 }
@@ -129,7 +179,6 @@ Common::Error TesoroEngine::run() {
 	int saveSlot = ConfMan.getInt("save_slot");
 	if (saveSlot != -1)
 		(void)loadGameState(saveSlot);
-
 
 
 	Common::Event e;
@@ -180,10 +229,10 @@ void TesoroEngine::update() {
 			}
 		}
 	}
-	// else if (_state == kCensorship && int32(_system->getMillis() - _deadline) >= 0) {
-		// _state = kDifficultyMenu;
-		// CursorMan.showMouse(true);
-	// }
+	else if (_state == kCensorship && int32(_system->getMillis() - _deadline) >= 0) {
+		_state = kDifficultyMenu;
+		CursorMan.showMouse(true);
+	}
 }
 
 
