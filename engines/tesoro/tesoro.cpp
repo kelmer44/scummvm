@@ -19,10 +19,6 @@
  *
  */
 
-#include "tesoro/tesoro.h"
-#include "graphics/framelimiter.h"
-#include "tesoro/detection.h"
-#include "tesoro/console.h"
 #include "common/scummsys.h"
 #include "common/config-manager.h"
 #include "common/debug-channels.h"
@@ -30,6 +26,11 @@
 #include "common/system.h"
 #include "engines/util.h"
 #include "graphics/paletteman.h"
+#include "graphics/surface.h"
+
+#include "tesoro/tesoro.h"
+#include "tesoro/detection.h"
+#include "tesoro/console.h"
 
 namespace Tesoro {
 
@@ -41,6 +42,7 @@ TesoroEngine::TesoroEngine(OSystem *syst, const ADGameDescription *gameDesc) : E
 }
 
 TesoroEngine::~TesoroEngine() {
+	_movie.close();
 	delete _screen;
 }
 
@@ -54,38 +56,131 @@ Common::String TesoroEngine::getGameId() const {
 
 void TesoroEngine::init() {
 	_archive.open();
+	_state = kMainMenu;
+	startMovie(0, kStartupMovie);
 
+}
+
+bool TesoroEngine::startMovie(uint number, State state) {
+	_movie.close();
+	Common::String filename = Common::String::format("data%02u.bin", number);
+	Common::FSNode file(ConfMan.getPath("path").join("bin").join(filename));
+	Common::SeekableReadStream *stream = file.createReadStream();
+	if (!stream) {
+		warning("Tesoro: cannot open movie %s", file.getPath().toString().c_str());
+		return false;
+	}
+	// Validate before transferring ownership: AVI only takes the stream after
+	// recognizing its RIFF/AVI header, and frees it on subsequent load failures.
+	byte header[12];
+
+	if (stream->read(header, sizeof(header)) != sizeof(header) ||
+		memcmp(header, "RIFF", 4) || memcmp(header + 8, "AVI ", 4)) {
+		delete stream;
+		warning("Tesoro: invalid AVI movie %s", filename.c_str());
+		return false;
+	}
+
+	stream->seek(0);
+	if (!_movie.loadStream(stream)) {
+		warning("Tesoro: cannot decode movie %s", filename.c_str());
+		delete stream;
+		return false;
+	}
+
+	_state = state;
+	_screen->fillRect(Common::Rect(640, 480), 0xff000000);
+	_movie.start();
+	return true;
+}
+
+void TesoroEngine::stopMovie() {
+	debug("Tesoro: stopping movie");
+	_movie.close();
+
+	if(_state == kStartupMovie) {
+		_state = kMainMenu;
+	}
+}
+
+void TesoroEngine::handleEvent(const Common::Event &event) {
+	if (event.type == Common::EVENT_QUIT || event.type == Common::EVENT_RETURN_TO_LAUNCHER) {
+		_movie.close();
+		return;
+	}
+	if (_state == kStartupMovie || _state == kNewGameMovie) {
+		if (event.type == Common::EVENT_KEYDOWN && event.kbd.keycode == Common::KEYCODE_ESCAPE)
+			stopMovie();
+		return;
+	}
 }
 
 Common::Error TesoroEngine::run() {
 
 	Graphics::PixelFormat format(4, 8, 8, 8, 8, 16, 8, 0, 24);
 	initGraphics(640, 480, &format);
-	init();
 	_screen = new Graphics::Screen();
 
 	// Set the engine's debugger console
 	setDebugger(new Console());
+	init();
 
 	// If a savegame was selected from the launcher, load it
 	int saveSlot = ConfMan.getInt("save_slot");
 	if (saveSlot != -1)
 		(void)loadGameState(saveSlot);
 
-	auto background = readBackground(_archive.read("PUERTO.LVL"));
 
-	_system->copyRectToScreen(background->pixels.data(), background->w * sizeof(uint32), 0, 0, 640, 480);
-	_system->updateScreen();
 
 	Common::Event e;
-
 	while (!shouldQuit()) {
-		while (g_system->getEventManager()->pollEvent(e)) {
-		}
+		while (_eventMan->pollEvent(e)) {
+			handleEvent(e);
+		 }
+		if(shouldQuit())
+			break;
+		 update();
+		 draw();
+		_screen->update();
 	}
+	_movie.close();
 
 	return Common::kNoError;
 }
+
+void TesoroEngine::draw() {
+	if(_state == kMainMenu) {
+
+		auto background = readBackground(_archive.read("PUERTO.LVL"));
+		_screen->copyRectToSurface(background->pixels.data(), background->w * sizeof(uint32), 0, 0, 640, 480);
+	// _system->updateScreen();
+	}
+
+	_screen->makeAllDirty();
+}
+
+void TesoroEngine::update() {
+	if (_state == kStartupMovie || _state == kNewGameMovie) {
+		if (_movie.endOfVideo()) {
+			stopMovie();
+		} else if (_movie.needsUpdate()) {
+			debug("Tesoro: decoding movie frame %u", _decodedMovieFrames);
+			const Graphics::Surface *frame = _movie.decodeNextFrame();
+			if (frame) {
+				Graphics::Surface *converted = frame->convertTo(_screen->format);
+				_screen->copyRectToSurface(converted->getPixels(), converted->pitch, 0, 0, converted->w, converted->h);
+				converted->free();
+				delete converted;
+				++_decodedMovieFrames;
+			}
+		}
+	}
+	// else if (_state == kCensorship && int32(_system->getMillis() - _deadline) >= 0) {
+		// _state = kDifficultyMenu;
+		// CursorMan.showMouse(true);
+	// }
+}
+
 
 Common::Error TesoroEngine::syncGame(Common::Serializer &s) {
 	// The Serializer has methods isLoading() and isSaving()

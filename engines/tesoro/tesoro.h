@@ -26,6 +26,7 @@
 #include "common/system.h"
 #include "common/error.h"
 #include "common/fs.h"
+#include "common/events.h"
 #include "common/hash-str.h"
 #include "common/random.h"
 #include "common/serializer.h"
@@ -36,6 +37,7 @@
 
 #include "tesoro/detection.h"
 #include "tesoro/resources.h"
+#include "video/avi_decoder.h"
 
 namespace Tesoro {
 
@@ -48,10 +50,22 @@ private:
 
 	Archive _archive;
 
+	enum State { kStartupMovie, kMainMenu, kNewGameMovie, kCensorship, kDifficultyMenu };
+	State _state = kMainMenu;
+	Video::AVIDecoder _movie;
+	uint _decodedMovieFrames = 0;
+
 	void init();
+	bool startMovie(uint number, State state);
+	void stopMovie();
+	void handleEvent(const Common::Event &event);
+	void draw();
+	void update();
+
 protected:
 	// Engine APIs
 	Common::Error run() override;
+
 public:
 	Graphics::Screen *_screen = nullptr;
 public:
