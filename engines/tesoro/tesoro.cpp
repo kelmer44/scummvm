@@ -192,7 +192,7 @@ void TesoroEngine::handleEvent(const Common::Event &event) {
 			break;
 		}
 		case 3: {
-			startScene("TABERNA.LVL");
+			startScene("PUERTO.LVL");
 			break;
 		}
 		default: {
@@ -239,7 +239,7 @@ void TesoroEngine::draw() {
 	if(_state == kAdventure && _currentScene) {
 		Common::Array<SceneSprite> sprites;
 		_currentScene->appendSprites(_gameTime, _camera, sprites);
-		// drawScene(*_screen->surfacePtr(), sprites);
+		_renderer.draw(*_screen->surfacePtr(), sprites);
 	}
 	else if (_state != kStartupMovie && _state != kNewGameMovie) {
 		const Image *background = _state == kMainMenu ? _mainMenu.background.get() : _newGameMenu.background.get();

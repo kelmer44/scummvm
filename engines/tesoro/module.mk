@@ -5,6 +5,7 @@ MODULE_OBJS = \
 	animation.o \
 	console.o \
 	metaengine.o \
+	renderer.o \
 	resources.o \
 	scene.o
 

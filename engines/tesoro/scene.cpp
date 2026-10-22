@@ -225,6 +225,38 @@ Scene::Scene(const SceneData &scene, uint32 now) {
 	}
 }
 
+SceneObject *Scene::find(const Common::String &name) const {
+	const uint64 id = encodeName(name);
+	for (uint i = 0; i < _objects.size(); ++i)
+		if (_objects[i]->nameId() == id)
+			return _objects[i].get();
+	return nullptr;
+}
+
+SceneObject *Scene::send(uint32 now, const Common::String &target, const SceneMessage &message) {
+	SceneObject *object = find(target);
+	if (!object)
+		error("Tesoro: Message sent to unknown object %s.", target.c_str());
+	switch (message.kind) {
+	case SceneMessage::kActivate:
+		object->setActive(message.on);
+		break;
+	case SceneMessage::kShow:
+		object->show(message.on);
+		break;
+	case SceneMessage::kPlay: {
+		const bool stop = message.mode == SceneMessage::kStop;
+		if (!object->play(message.bank, now, message.first, stop ? int(message.first) : -1,
+		                  message.mode == SceneMessage::kLoop))
+			error("Tesoro: Invalid play message for %s.", target.c_str());
+		if (message.mode == SceneMessage::kPlayAndWait)
+			return object;
+		break;
+	}
+	}
+	return nullptr;
+}
+
 void Scene::appendSprites(uint32 now, const SceneCamera &camera, Common::Array<SceneSprite> &sprites) {
 	for (uint i = 0; i < _groups.size(); ++i) {
 		const Group &group = _groups[i];

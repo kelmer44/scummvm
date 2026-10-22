@@ -86,6 +86,8 @@ public:
 	uint16 depth() const { return _depth; }
 	int32 x() const { return _x; }
 	const SceneBounds &hitBounds() const { return _hitBounds; }
+	// True while the selected bank is still playing an animation.
+	bool isPlaying() const { return !_players.empty() && (_players[_selected]->state().flags & AnimationPlayer::kPlaying); }
 
 protected:
 	SceneObject(const SceneObjectRecord &record, const SceneGroup &group, const SceneData &scene);
@@ -115,12 +117,34 @@ public:
 	bool sprite(const SceneView &view, SceneSprite &sprite) const override;
 };
 
+// The object messages a script's sendmessage can carry (script op 9).
+struct SceneMessage {
+	enum Kind { kActivate, kShow, kPlay };
+	// How a play message ends: stop on `first`, run to the end of the sequence, loop,
+	// or run to the end while the sender waits for it.
+	enum PlayMode { kStop, kPlayOnce, kLoop, kPlayAndWait };
+
+	Kind kind = kActivate;
+	bool on = false;             // kActivate, kShow
+	uint bank = 0;               // kPlay
+	uint16 first = 0;            // kPlay
+	PlayMode mode = kPlayOnce;   // kPlay
+};
+
 // A loaded scene owns every object in its LVL. Kinds without a SceneObject subclass
 // yet are built as inert placeholders (with a warning) so nothing is silently dropped.
 class Scene {
 public:
 	Scene(const SceneData &scene, uint32 now);
 	void appendSprites(uint32 now, const SceneCamera &camera, Common::Array<SceneSprite> &sprites);
+
+	// Finds an object by its LVL name (compared by the original's 64-bit encoding).
+	// If several objects share a name, the first in LVL order is returned.
+	SceneObject *find(const Common::String &name) const;
+
+	// Delivers a message to the named object. Returns the object when the sender has to
+	// wait for its animation to finish (kPlayAndWait), otherwise nullptr.
+	SceneObject *send(uint32 now, const Common::String &target, const SceneMessage &message);
 
 private:
 	struct Group {

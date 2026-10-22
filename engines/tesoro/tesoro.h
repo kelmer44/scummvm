@@ -38,6 +38,7 @@
 
 #include "tesoro/detection.h"
 #include "tesoro/resources.h"
+#include "tesoro/renderer.h"
 #include "tesoro/scene.h"
 
 namespace Tesoro {
@@ -64,6 +65,7 @@ private:
 
 	SceneData _scene;
 	SceneCamera _camera;
+	SceneRenderer _renderer;
 	Common::ScopedPtr<Scene> _currentScene;
 
 	void startScene(const Common::String &name);
