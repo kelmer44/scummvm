@@ -34,18 +34,20 @@
 #include "engines/engine.h"
 #include "engines/savestate.h"
 #include "graphics/screen.h"
+#include "audio/mixer.h"
 #include "video/avi_decoder.h"
 
 #include "tesoro/detection.h"
 #include "tesoro/resources.h"
 #include "tesoro/renderer.h"
 #include "tesoro/scene.h"
+#include "tesoro/scriptexec.h"
 
 namespace Tesoro {
 
 struct TesoroGameDescription;
 
-class TesoroEngine : public Engine {
+class TesoroEngine : public Engine, public ScriptHost {
 private:
 	const ADGameDescription *_gameDescription;
 	Common::RandomSource _randomSource;
@@ -68,7 +70,40 @@ private:
 	SceneRenderer _renderer;
 	Common::ScopedPtr<Scene> _currentScene;
 
+	ScriptLibrary _library;
+	Common::Array<Common::SharedPtr<Script>> _scripts;
+	// The variable block the opening scripts run with; its ownership is still to be recovered.
+	uint8 _variables[256] = {};
+	bool _inputEnabled = true;
+
+	Common::SharedPtr<Animation> _font;
+	Audio::SoundHandle _speech, _effect;
+	Common::String _subtitle;
+	bool _speaking = false, _speechMuted = false, _speechSkipped = false;
+	uint32 _speechUntil = 0;
+
 	void startScene(const Common::String &name);
+	void startAdventure();
+	void stopAdventure();
+	void updateSpeech();
+	void updateScripts();
+	Audio::SeekableAudioStream *openWav(const Common::String &name);
+
+	// ScriptHost
+	uint32 gameTime() const override { return _gameTime; }
+	Scene *scene(ScriptOp::Scope scope, int level) override;
+	void setInputEnabled(bool enabled) override { _inputEnabled = enabled; }
+	void startScript(const ScriptBlock &block, uint64 labelId, uint8 *variables, Scene &scene) override;
+	void startSpeech(SceneObject *speaker, const TextEntry &text, int option) override;
+	bool isSpeaking(SceneObject *speaker) const override;
+	int pickDialogueChoice(const Common::Array<const TextEntry *> &choices) override;
+	void startMovie(uint number) override;
+	bool isMovieFinished() const override { return _state != kAdventureMovie; }
+	void playSound(const Common::String &name) override;
+	void playMusic(uint track) override;
+	void doNative(uint scriptType, uint ordinal) override;
+	void walk(SceneObject &object, int x, int y, Script &waiter) override;
+	void look(SceneObject &object, ScriptOp::Direction direction) override;
 
 	void init();
 	bool startMovie(uint number, State state);

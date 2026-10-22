@@ -225,8 +225,7 @@ Scene::Scene(const SceneData &scene, uint32 now) {
 	}
 }
 
-SceneObject *Scene::find(const Common::String &name) const {
-	const uint64 id = encodeName(name);
+SceneObject *Scene::find(uint64 id) const {
 	for (uint i = 0; i < _objects.size(); ++i)
 		if (_objects[i]->nameId() == id)
 			return _objects[i].get();
@@ -234,9 +233,16 @@ SceneObject *Scene::find(const Common::String &name) const {
 }
 
 SceneObject *Scene::send(uint32 now, const Common::String &target, const SceneMessage &message) {
-	SceneObject *object = find(target);
+	return deliver(now, find(target), target.c_str(), message);
+}
+
+SceneObject *Scene::send(uint32 now, uint64 target, const SceneMessage &message) {
+	return deliver(now, find(target), "(by name hash)", message);
+}
+
+SceneObject *Scene::deliver(uint32 now, SceneObject *object, const char *name, const SceneMessage &message) {
 	if (!object)
-		error("Tesoro: Message sent to unknown object %s.", target.c_str());
+		error("Tesoro: Message sent to unknown object %s.", name);
 	switch (message.kind) {
 	case SceneMessage::kActivate:
 		object->setActive(message.on);
@@ -248,7 +254,7 @@ SceneObject *Scene::send(uint32 now, const Common::String &target, const SceneMe
 		const bool stop = message.mode == SceneMessage::kStop;
 		if (!object->play(message.bank, now, message.first, stop ? int(message.first) : -1,
 		                  message.mode == SceneMessage::kLoop))
-			error("Tesoro: Invalid play message for %s.", target.c_str());
+			error("Tesoro: Invalid play message for %s.", name);
 		if (message.mode == SceneMessage::kPlayAndWait)
 			return object;
 		break;

@@ -75,6 +75,11 @@ Bytes Archive::read(Common::String name) {
 	return b;
 }
 
+bool Archive::has(Common::String name) const {
+	name.toUppercase();
+	return _entries.contains(name);
+}
+
 Common::SeekableReadStream *Archive::stream(Common::String name) {
 	name.toUppercase();
 	if (!_entries.contains(name))

@@ -140,11 +140,13 @@ public:
 
 	// Finds an object by its LVL name (compared by the original's 64-bit encoding).
 	// If several objects share a name, the first in LVL order is returned.
-	SceneObject *find(const Common::String &name) const;
+	SceneObject *find(const Common::String &name) const { return find(encodeName(name)); }
+	SceneObject *find(uint64 id) const;
 
 	// Delivers a message to the named object. Returns the object when the sender has to
 	// wait for its animation to finish (kPlayAndWait), otherwise nullptr.
 	SceneObject *send(uint32 now, const Common::String &target, const SceneMessage &message);
+	SceneObject *send(uint32 now, uint64 target, const SceneMessage &message);
 
 private:
 	struct Group {
@@ -155,6 +157,7 @@ private:
 	Common::Array<Common::SharedPtr<SceneObject>> _objects;
 	uint32 _warnedKinds = 0;
 
+	SceneObject *deliver(uint32 now, SceneObject *object, const char *name, const SceneMessage &message);
 	SceneObject *createObject(const SceneObjectRecord &record, const SceneGroup &group,  const SceneData &scene, uint32 now);
 };
 

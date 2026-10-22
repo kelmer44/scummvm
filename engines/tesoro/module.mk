@@ -8,7 +8,8 @@ MODULE_OBJS = \
 	renderer.o \
 	resources.o \
 	scene.o \
-	script.o
+	script.o \
+	scriptexec.o
 
 # This module can be built as a plugin
 ifeq ($(ENABLE_TESORO), DYNAMIC_PLUGIN)

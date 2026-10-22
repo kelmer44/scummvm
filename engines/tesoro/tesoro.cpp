@@ -34,6 +34,8 @@
 #include "tesoro/detection.h"
 #include "tesoro/console.h"
 #include "graphics/framelimiter.h"
+#include "audio/audiostream.h"
+#include "audio/decoders/wave.h"
 
 namespace Tesoro {
 
@@ -45,6 +47,9 @@ TesoroEngine::TesoroEngine(OSystem *syst, const ADGameDescription *gameDesc) : E
 }
 
 TesoroEngine::~TesoroEngine() {
+	_scripts.clear();
+	_mixer->stopHandle(_speech);
+	_mixer->stopHandle(_effect);
 	_movie.close();
 	delete _screen;
 }
@@ -58,6 +63,7 @@ Common::String TesoroEngine::getGameId() const {
 }
 
 void TesoroEngine::startScene(const Common::String &name) {
+	_scripts.clear();
 	_currentScene.reset();
 	_scene = readScene(_archive.read(name));
 
@@ -79,6 +85,8 @@ void TesoroEngine::init() {
 	_archive.open();
 	_mainMenu = readMenu(_archive.read("PRINCIPAL.LVL"));
 	_newGameMenu = readMenu(_archive.read("NUEVO.LVL"));
+	_library.load(_archive);
+	_font.reset(new Animation(readAnimation(_archive.read("FUENTES.ANM"))));
 	// Temporary pointer until the original interface cursor is ported.
 	uint32 cursor[12 * 18] = {};
 	for (uint y = 0; y < 18; ++y)
@@ -89,6 +97,7 @@ void TesoroEngine::init() {
 	_state = kMainMenu;
 	startMovie(0, kStartupMovie);
 	CursorMan.showMouse(_state == kMainMenu);
+	if (ConfMan.hasKey("tesoro_test_adventure")) startAdventure(); // LOCAL-TEST-HOOK
 }
 
 bool TesoroEngine::startMovie(uint number, State state) {
@@ -136,7 +145,9 @@ bool TesoroEngine::startMovie(uint number, State state) {
 void TesoroEngine::stopMovie() {
 	debug("Tesoro: stopping movie");
 	_movie.close();
-	if (_state == kNewGameMovie) {
+	if (_state == kAdventureMovie) {
+		_state = kAdventure;
+	} else if (_state == kNewGameMovie) {
 		_state = kCensorship;
 		_deadline = _system->getMillis() + 5500; // FANMMENU/nuevo in ANIMS.DLG.
 	} else {
@@ -153,13 +164,17 @@ void TesoroEngine::handleEvent(const Common::Event &event) {
 	if (_state == kAdventure) {
 		if (event.type == Common::EVENT_KEYDOWN &&
 			event.kbd.keycode == Common::KEYCODE_ESCAPE) {
-			_currentScene.reset();
+			stopAdventure();
 			_state = kMainMenu;
 			CursorMan.showMouse(true);
+		} else if (_speaking && (event.type == Common::EVENT_LBUTTONDOWN ||
+		           (event.type == Common::EVENT_KEYDOWN && event.kbd.keycode == Common::KEYCODE_SPACE))) {
+			_mixer->stopHandle(_speech);
+			_speechSkipped = true;
 		}
 		return;
 	}
-	if (_state == kStartupMovie || _state == kNewGameMovie) {
+	if (_state == kStartupMovie || _state == kNewGameMovie || _state == kAdventureMovie) {
 		if (event.type == Common::EVENT_KEYDOWN && event.kbd.keycode == Common::KEYCODE_ESCAPE)
 			stopMovie();
 		return;
@@ -192,7 +207,7 @@ void TesoroEngine::handleEvent(const Common::Event &event) {
 			break;
 		}
 		case 3: {
-			startScene("PUERTO.LVL");
+			startAdventure();
 			break;
 		}
 		default: {
@@ -240,8 +255,10 @@ void TesoroEngine::draw() {
 		Common::Array<SceneSprite> sprites;
 		_currentScene->appendSprites(_gameTime, _camera, sprites);
 		_renderer.draw(*_screen->surfacePtr(), sprites);
+		if (!_subtitle.empty() && _font && (ConfMan.getBool("subtitles") || ConfMan.getBool("speech_mute")))
+			_renderer.drawNarration(*_screen->surfacePtr(), *_font, _subtitle, 0x001f);
 	}
-	else if (_state != kStartupMovie && _state != kNewGameMovie) {
+	else if (_state != kStartupMovie && _state != kNewGameMovie && _state != kAdventureMovie) {
 		const Image *background = _state == kMainMenu ? _mainMenu.background.get() : _newGameMenu.background.get();
 		if (_state == kCensorship && _newGameMenu.censorship)
 			background = _newGameMenu.censorship.get();
@@ -262,7 +279,7 @@ void TesoroEngine::update() {
 		return;
 	if (_state == kAdventure && elapsed < 500)
 		_gameTime += elapsed;
-	if (_state == kStartupMovie || _state == kNewGameMovie) {
+	if (_state == kStartupMovie || _state == kNewGameMovie || _state == kAdventureMovie) {
 		if (_movie.endOfVideo()) {
 			stopMovie();
 		} else if (_movie.needsUpdate()) {
@@ -277,12 +294,152 @@ void TesoroEngine::update() {
 			}
 		}
 	}
+	else if (_state == kAdventure) {
+		updateSpeech();
+		updateScripts();
+	}
 	else if (_state == kCensorship && int32(_system->getMillis() - _deadline) >= 0) {
 		_state = kDifficultyMenu;
 		CursorMan.showMouse(true);
 	}
 }
 
+
+void TesoroEngine::startAdventure() {
+	memset(_variables, 0, sizeof(_variables));
+	_inputEnabled = true;
+	startScene("PUERTO.LVL");
+	const ScriptBlock *block = _library.find("FANPRESENT");
+	if (!block)
+		error("Tesoro: The introduction script is missing.");
+	startScript(*block, encodeName("main"), _variables, *_currentScene);
+}
+
+void TesoroEngine::stopAdventure() {
+	_scripts.clear();
+	_mixer->stopHandle(_speech);
+	_mixer->stopHandle(_effect);
+	_speaking = false;
+	_subtitle.clear();
+	_currentScene.reset();
+}
+
+void TesoroEngine::updateScripts() {
+	for (uint i = 0; i < _scripts.size(); ++i)
+		_scripts[i]->update();
+	for (uint i = 0; i < _scripts.size();) {
+		if (_scripts[i]->finished())
+			_scripts.remove_at(i);
+		else
+			++i;
+	}
+}
+
+void TesoroEngine::updateSpeech() {
+	if (!_speaking)
+		return;
+	const bool done = _speechSkipped || (_speechMuted ? int32(_gameTime - _speechUntil) >= 0
+	                                                   : !_mixer->isSoundHandleActive(_speech));
+	if (done) {
+		_speaking = false;
+		_subtitle.clear();
+	}
+}
+
+Audio::SeekableAudioStream *TesoroEngine::openWav(const Common::String &name) {
+	if (!_archive.has(name))
+		error("Tesoro: Missing audio %s.", name.c_str());
+	Audio::SeekableAudioStream *audio = Audio::makeWAVStream(_archive.stream(name), DisposeAfterUse::YES);
+	if (!audio)
+		error("Tesoro: Cannot decode audio %s.", name.c_str());
+	return audio;
+}
+
+Scene *TesoroEngine::scene(ScriptOp::Scope scope, int level) {
+	return scope == ScriptOp::kCurrentScene ? _currentScene.get() : nullptr;
+}
+
+void TesoroEngine::startScript(const ScriptBlock &block, uint64 labelId, uint8 *variables, Scene &scene) {
+	Common::SharedPtr<Script> script(new Script(*this, block, labelId, variables, scene));
+	_scripts.push_back(script);
+	script->start();
+}
+
+void TesoroEngine::startSpeech(SceneObject *speaker, const TextEntry &text, int option) {
+	if (speaker)
+		error("Tesoro: Character speech is not implemented (%s).", text.name.c_str());
+	// The narrator: the text is centred on the screen and read from the speech file.
+	_mixer->stopHandle(_speech);
+	Audio::SeekableAudioStream *audio = openWav(text.name + ".WAV");
+	_subtitle = text.text;
+	_speaking = true;
+	_speechSkipped = false;
+	_speechMuted = ConfMan.getBool("speech_mute");
+	_speechUntil = _gameTime + audio->getLength().msecs();
+	if (_speechMuted)
+		delete audio;
+	else
+		_mixer->playStream(Audio::Mixer::kSpeechSoundType, &_speech, audio);
+}
+
+bool TesoroEngine::isSpeaking(SceneObject *speaker) const {
+	if (speaker)
+		error("Tesoro: Character speech is not implemented.");
+	return _speaking;
+}
+
+int TesoroEngine::pickDialogueChoice(const Common::Array<const TextEntry *> &choices) {
+	error("Tesoro: Dialogue choices are not implemented.");
+}
+
+void TesoroEngine::startMovie(uint number) {
+	// A missing movie is skipped, as at the start of the game.
+	if (!startMovie(number, kAdventureMovie))
+		warning("Tesoro: Skipping movie %u.", number);
+}
+
+void TesoroEngine::playSound(const Common::String &name) {
+	_mixer->stopHandle(_effect);
+	_mixer->playStream(Audio::Mixer::kSFXSoundType, &_effect, openWav(name + ".WAV"));
+}
+
+void TesoroEngine::playMusic(uint track) {
+	warning("Tesoro: CD audio is not implemented (track %u).", track);
+}
+
+void TesoroEngine::doNative(uint scriptType, uint ordinal) {
+	if (scriptType == 1) {
+		switch (ordinal) {
+		case 0: // Jim is hidden and activated; he does not exist yet.
+		case 1:
+		case 2:
+		case 6: // These have no effect in the original.
+			return;
+		case 3: {
+			SceneMessage show;
+			show.kind = SceneMessage::kShow;
+			show.on = true;
+			_currentScene->send(_gameTime, "BARCO", show);
+			SceneMessage play;
+			play.kind = SceneMessage::kPlay;
+			play.mode = SceneMessage::kLoop;
+			_currentScene->send(_gameTime, "BARCO", play);
+			return;
+		}
+		default:
+			break;
+		}
+	}
+	error("Tesoro: Native action %u of script type %u is not implemented.", ordinal, scriptType);
+}
+
+void TesoroEngine::walk(SceneObject &object, int x, int y, Script &waiter) {
+	error("Tesoro: Walking is not implemented.");
+}
+
+void TesoroEngine::look(SceneObject &object, ScriptOp::Direction direction) {
+	error("Tesoro: Turning a character is not implemented.");
+}
 
 void TesoroEngine::pauseEngineIntern(bool pause) {
 	Engine::pauseEngineIntern(pause);

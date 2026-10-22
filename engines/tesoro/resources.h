@@ -39,6 +39,7 @@ class Archive {
         void open();
         Bytes read(Common::String name);
         Common::SeekableReadStream *stream(Common::String name);
+        bool has(Common::String name) const;
         Common::Array<Common::String> names() const;
         uint count() const { return _entries.size(); }
 
