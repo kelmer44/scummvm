@@ -7,7 +7,8 @@ MODULE_OBJS = \
 	metaengine.o \
 	renderer.o \
 	resources.o \
-	scene.o
+	scene.o \
+	script.o
 
 # This module can be built as a plugin
 ifeq ($(ENABLE_TESORO), DYNAMIC_PLUGIN)
