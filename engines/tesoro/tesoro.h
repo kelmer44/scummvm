@@ -34,10 +34,11 @@
 #include "engines/engine.h"
 #include "engines/savestate.h"
 #include "graphics/screen.h"
+#include "video/avi_decoder.h"
 
 #include "tesoro/detection.h"
 #include "tesoro/resources.h"
-#include "video/avi_decoder.h"
+#include "tesoro/scene.h"
 
 namespace Tesoro {
 
@@ -50,12 +51,21 @@ private:
 
 	Archive _archive;
 
-	enum State { kStartupMovie, kMainMenu, kNewGameMovie, kCensorship, kDifficultyMenu };
+	enum State { kStartupMovie, kMainMenu, kNewGameMovie, kCensorship, kDifficultyMenu, kAdventureMovie, kAdventure };
 	State _state = kMainMenu;
 	Menu _mainMenu, _newGameMenu;
 	Video::AVIDecoder _movie;
 	uint32 _deadline = 0, _pausedAt = 0;
 	uint _decodedMovieFrames = 0;
+
+	Common::Array<uint32> _depth;
+
+	SceneData _scene;
+	SceneCamera _camera;
+	Common::ScopedPtr<SceneScenery> _scenery;
+
+	void startScene(const Common::String &name);
+	void drawScene(Graphics::Surface &surface, const Common::Array<SceneSprite> &sprites);
 
 	void init();
 	bool startMovie(uint number, State state);

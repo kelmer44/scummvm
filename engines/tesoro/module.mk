@@ -5,7 +5,8 @@ MODULE_OBJS = \
 	animation.o \
 	console.o \
 	metaengine.o \
-	resources.o
+	resources.o \
+	scene.o
 
 # This module can be built as a plugin
 ifeq ($(ENABLE_TESORO), DYNAMIC_PLUGIN)

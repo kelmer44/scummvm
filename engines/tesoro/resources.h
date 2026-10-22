@@ -65,8 +65,32 @@ struct Animation {
     Common::String name;
     Common::Array<Frame> frames;
     Common::Array<Common::SharedPtr<Image>> images;
-
 };
+
+struct SceneObjectRecord {
+    Common::String name;
+    int32 x, y;
+    int16 depth;
+    byte field10;
+    uint32 kind;
+    Bytes parameters;
+    Bytes bankIndices;
+};
+
+struct SceneGroup {
+    Bytes header;
+    uint16 depthBase, depthSpan;
+    int32 parallax;
+    Common::Array<SceneObjectRecord> objects;
+};
+
+struct SceneData {
+    Common::Array<Common::SharedPtr<Animation>> banks;
+    Common::Array<SceneGroup> groups;
+};
+
+uint64 encodeName(const Common::String &name);
+SceneData readScene(const Bytes &data);
 
 struct MenuButton {
     Common::String name;

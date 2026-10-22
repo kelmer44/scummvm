@@ -57,11 +57,53 @@ Common::String TesoroEngine::getGameId() const {
 	return _gameDescription->gameId;
 }
 
+void TesoroEngine::startScene(const Common::String &name) {
+	_scenery.reset();
+	_scene = readScene(_archive.read(name));
+
+	RoomEntry entry;
+	if(!findRoomEntry(_scene, entry))
+		error("Tesoro: Failed to find room entry.");
+	_camera.setBounds(entry.bounds);
+	_camera.setPosition(entry.x, entry.y);
+
+	_scenery.reset(new SceneScenery(_scene, 0));
+
+	_state = kAdventure;
+	CursorMan.showMouse(false);
+}
+
+void TesoroEngine::drawScene(Graphics::Surface &surface, const Common::Array<SceneSprite> &sprites) {
+	assert(surface.w == 640 && surface.h == 480 && surface.format.bytesPerPixel == 4);
+	surface.fillRect(Common::Rect(640, 480), 0xff000000);
+	Common::fill(_depth.begin(), _depth.end(), 0x10000U);
+	for (uint i = 0; i < sprites.size(); ++i) {
+		const SceneSprite &sprite = sprites[i];
+		const Image &image = *sprite.image;
+		if (image.kind == 2)
+			error("Tesoro: Shadow composition is not implemented.");
+		int left = MAX<int32>(0, sprite.x), top = MAX<int32>(0, sprite.y);
+		int right = MIN<int64>(640, int64(sprite.x) + image.w);
+		int bottom = MIN<int64>(480, int64(sprite.y) + image.h);
+		for (int y = top; y < bottom; ++y) {
+			uint32 *row = (uint32 *)surface.getBasePtr(0, y);
+			for (int x = left; x < right; ++x) {
+				uint32 colour = image.pixels[(y - sprite.y) * image.w + x - sprite.x];
+				uint index = y * 640 + x;
+				if (colour && sprite.depth < _depth[index]) {
+					row[x] = colour;
+					_depth[index] = sprite.depth;
+				}
+			}
+		}
+	}
+}
+
 void TesoroEngine::init() {
 	_archive.open();
 	_mainMenu = readMenu(_archive.read("PRINCIPAL.LVL"));
 	_newGameMenu = readMenu(_archive.read("NUEVO.LVL"));
-
+	_depth.resize(640 * 480);
 	// Temporary pointer until the original interface cursor is ported.
 	uint32 cursor[12 * 18] = {};
 	for (uint y = 0; y < 18; ++y)
@@ -133,6 +175,15 @@ void TesoroEngine::handleEvent(const Common::Event &event) {
 		_movie.close();
 		return;
 	}
+	if (_state == kAdventure) {
+		if (event.type == Common::EVENT_KEYDOWN &&
+			event.kbd.keycode == Common::KEYCODE_ESCAPE) {
+			_scenery.reset();
+			_state = kMainMenu;
+			CursorMan.showMouse(true);
+		}
+		return;
+	}
 	if (_state == kStartupMovie || _state == kNewGameMovie) {
 		if (event.type == Common::EVENT_KEYDOWN && event.kbd.keycode == Common::KEYCODE_ESCAPE)
 			stopMovie();
@@ -163,6 +214,10 @@ void TesoroEngine::handleEvent(const Common::Event &event) {
 		case 1: {
 			GUI::MessageDialog dialog(Common::U32String("Cargar partidas todavía no está disponible."));
 			dialog.runModal();
+			break;
+		}
+		case 3: {
+			startScene("TABERNA.LVL");
 			break;
 		}
 		default: {
@@ -206,7 +261,12 @@ Common::Error TesoroEngine::run() {
 }
 
 void TesoroEngine::draw() {
-	if (_state != kStartupMovie && _state != kNewGameMovie) {
+	if(_state == kAdventure && _scenery) {
+		Common::Array<SceneSprite> sprites;
+		_scenery->appendSprites(0, _camera, sprites);
+		drawScene(*_screen->surfacePtr(), sprites);
+	}
+	else if (_state != kStartupMovie && _state != kNewGameMovie) {
 		const Image *background = _state == kMainMenu ? _mainMenu.background.get() : _newGameMenu.background.get();
 		if (_state == kCensorship && _newGameMenu.censorship)
 			background = _newGameMenu.censorship.get();

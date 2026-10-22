@@ -26,6 +26,8 @@ namespace Tesoro {
 
 void Archive::open() {
 	Common::File tre;
+	// Game reads entries from TESORO.TRE that have u32 offset + u32 size, u8 flags and name[19] and point to resources in TESORO.DAT
+	// TESORO.DAT entries begin with u32 payloadSize, followed by the actual resource data (at offset+4)
 	if (!tre.open("TESORO.TRE") || !_dat.open("TESORO.DAT")) {
 		error("Tesoro: Failed to open TESORO.TRE or TESORO.DAT");
 		return;
@@ -59,6 +61,9 @@ void Archive::open() {
 	}
 }
 
+/**
+ * Reads a resource by name from the list of entries.
+ */
 Bytes Archive::read(Common::String name) {
 	Common::ScopedPtr<Common::SeekableReadStream> in(stream(name));
 	Bytes b;
@@ -91,14 +96,17 @@ public:
 		if (p + n > _b.size())
 			error("Tesoro: Out of bounds read.");
 	}
+
 	uint16 u16(uint32 p) const {
 		check(p, 2);
 		return READ_LE_UINT16(_b.data() + p);
 	}
+
 	uint32 u32(uint32 p) const {
 		check(p, 4);
 		return READ_LE_UINT32(_b.data() + p);
 	}
+
 	Common::String str(uint32 p, uint32 n) const {
 		check(p, n);
 		uint32 end = p;
@@ -106,6 +114,7 @@ public:
 			++end;
 		return Common::String((const char *)_b.data() + p, end - p);
 	}
+
 	Bytes bytes(uint32 p, uint32 n) const {
 		check(p, n);
 		Bytes out;
@@ -114,16 +123,18 @@ public:
 			memcpy(out.data(), _b.data() + p, n);
 		return out;
 	}
-	Animation bank();
+
+	Animation animation();
 };
 
-Animation Reader::bank() {
+// A bank starts with ANM header: "ANM" (3 bytes) + isFont (1 byte) + frameCount (2 bytes) + imageCount (2 bytes) + name (12 bytes) + flags (2 bytes) + reserved (4 bytes)
+Animation Reader::animation() {
 	check(curPos, 28);
 	// check header is "ANM"
 	if ((u32(curPos) & 0xffffff) != 0x4d4e41 || (u32(curPos) >> 24) > 1)
 		error("Tesoro: Invalid ANM header.");
 
-	const bool isFont = (u32(curPos) >> 24) == 0;
+	const bool isFont = (u32(curPos) >> 24) == 0; // third byte indicates if it's a font (0) or not (1)
 	uint frameCount = u16(curPos + 4);
 	uint imageCount = u16(curPos + 8);
 	if (frameCount > 10000 || imageCount > 10000)
@@ -133,8 +144,8 @@ Animation Reader::bank() {
 	bank.interpolateMovement = !isFont && (u16(curPos + 24) & 0xff) == 1;
 	bank.name = str(curPos + 12, 12);
 	curPos += 28; // advance past the header
-	// Read frame description
 
+	// Read frame descriptions (24 bytes each)
 	for (uint i = 0; i < frameCount; ++i) {
 		check(curPos, 24);
 		Frame f;
@@ -156,18 +167,18 @@ Animation Reader::bank() {
 	}
 
 	// makes movement relative to the first frame.
-	// These are sequence positions, not per-frame velocity increments.
 	if (!isFont && !bank.frames.empty()) {
-		const int16 originX = bank.frames[0].dx;
+		const int16 originX = bank.frames[0].dx; // takes original coordinates from frame 0
 		const int16 originY = bank.frames[0].dy;
 		for (uint i = 1; i < bank.frames.size(); ++i) {
-			bank.frames[i].dx = int16(uint16(bank.frames[i].dx) - uint16(originX));
-			bank.frames[i].dy = int16(uint16(bank.frames[i].dy) - uint16(originY));
+			bank.frames[i].dx = int16(uint16(bank.frames[i].dx) - uint16(originX)); // every subsequent frame's dx is made relative to the first frame
+			bank.frames[i].dy = int16(uint16(bank.frames[i].dy) - uint16(originY)); // every subsequent frame's dy is made relative to the first frame
 		}
-		bank.frames[0].dx = 0;
+		bank.frames[0].dx = 0; // frame 0 is the origin for relative movement
 		bank.frames[0].dy = 0;
 	}
 
+	// Read the image data for each image in the bank.
 	for (uint i = 0; i < imageCount; ++i) {
 		uint32 size = u32(curPos), base = curPos + 4;
 		check(base, size);
@@ -176,7 +187,7 @@ Animation Reader::bank() {
 		Common::SharedPtr<Image> im(new Image);
 		im->w = u16(base + 8);
 		im->h = u16(base + 10);
-		im->kind = u16(base + 12);
+		im->kind = u16(base + 12); // Kind 1 uses literal RGB565 pixels, kind 3 solid RGB565 colors, kind 2 shadow intensities.
 		uint32 pixelStart = u32(base);
 		if (!im->w || !im->h || im->w > 4096 || im->h > 4096 || im->kind < 1 || im->kind > 3 || pixelStart < 16 + im->h * 8U || pixelStart > size)
 			error("Tesoro: bad image dimensions/table");
@@ -199,7 +210,7 @@ Animation Reader::bank() {
 						c = 0x80000000 | ((value & 31) * 255 / 31); // Shadow marker: renderer multiplies destination.
 					else {
 						uint16 rgb = im->kind == 1 ? u16(base + value + k * 2) : value;
-						c = 0xff000000 | (((rgb >> 11) * 255 / 31) << 16) | ((((rgb >> 5) & 63) * 255 / 63) << 8) | ((rgb & 31) * 255 / 31);
+						c = 0xff000000 | (((rgb >> 11) * 255 / 31) << 16) | ((((rgb >> 5) & 63) * 255 / 63) << 8) | ((rgb & 31) * 255 / 31); // converts to rgba8888 from RGB565
 					}
 					im->pixels[y * im->w + x + k] = c;
 				}
@@ -217,10 +228,79 @@ Animation Reader::bank() {
 
 Animation readAnimation(const Bytes &data) {
 	Reader r(data);
-	Animation b = r.bank();
+	Animation b = r.animation();
 	if (r.curPos != data.size())
 		error("Tesoro: ANM trailing bytes");
 	return b;
+}
+
+uint64 encodeName(const Common::String &name) {
+	uint32 parts[2] = {0, 0};
+	bool ended = false;
+	for (uint i = 0; i < 12; ++i) {
+		byte value = !ended && i < name.size() ? byte(name[i]) : 0;
+		ended = ended || !value;
+		uint32 code = 0;
+		if (!ended)
+			code = (int8(value) < '5' ? uint32(value) + 11 : value) & 31;
+		parts[i / 6] = (parts[i / 6] << 5) | code;
+	}
+	return uint64(parts[1]) << 32 | parts[0];
+}
+
+SceneData readScene(const Bytes &data) {
+	Reader r(data);
+	r.check(0, 16);
+	if (r.u32(0) != 0x014c564c)
+		error("Tesoro: Invalid LVL header.");
+	uint32 groupCount = r.u32(4), bankCount = r.u32(8), objectCount = r.u32(12);
+	if (groupCount > 10000 || bankCount > 10000 || objectCount > 10000)
+		error("Tesoro: Invalid LVL counts.");
+	SceneData scene;
+	r.curPos = 16;
+	for (uint i = 0; i < bankCount; ++i)
+		scene.banks.push_back(Common::SharedPtr<Animation>(new Animation(r.animation())));
+	uint32 parsedObjects = 0;
+	uint16 depthBase = 0;
+	for (uint i = 0; i < groupCount; ++i) {
+		r.check(r.curPos, 40);
+		SceneGroup group;
+		group.header = r.bytes(r.curPos, 40);
+		uint count = r.u16(r.curPos + 32);
+		group.depthBase = depthBase;
+		group.depthSpan = r.u16(r.curPos + 34);
+		group.parallax = int32(r.u32(r.curPos + 36));
+		depthBase = uint16(depthBase + group.depthSpan);
+		r.curPos += 40;
+		if (count > objectCount - parsedObjects)
+			error("Tesoro: Invalid LVL object count.");
+		for (uint j = 0; j < count; ++j) {
+			r.check(r.curPos, 32);
+			SceneObjectRecord object;
+			object.x = int32(r.u32(r.curPos));
+			object.y = int32(r.u32(r.curPos + 4));
+			object.depth = int16(r.u16(r.curPos + 8));
+			object.field10 = data[r.curPos + 10];
+			uint bankRefs = data[r.curPos + 11];
+			object.name = r.str(r.curPos + 12, 12);
+			object.kind = r.u32(r.curPos + 24);
+			uint32 parameterSize = r.u32(r.curPos + 28);
+			r.curPos += 32;
+			object.parameters = r.bytes(r.curPos, parameterSize);
+			r.curPos += parameterSize;
+			object.bankIndices = r.bytes(r.curPos, bankRefs);
+			r.curPos += bankRefs;
+			for (uint k = 0; k < bankRefs; ++k)
+				if (object.bankIndices[k] >= bankCount)
+					error("Tesoro: Invalid LVL animation reference for %s.", object.name.c_str());
+			group.objects.push_back(object);
+		}
+		parsedObjects += count;
+		scene.groups.push_back(group);
+	}
+	if (parsedObjects != objectCount || r.curPos != data.size())
+		error("Tesoro: Inconsistent LVL size or object count.");
+	return scene;
 }
 
 Common::SharedPtr<Image> readBackground(const Bytes &data) {
@@ -230,7 +310,7 @@ Common::SharedPtr<Image> readBackground(const Bytes &data) {
 		error("Tesoro: invalid LVL");
 
 	r.curPos = 16; // Skip the LVL header.
-	Animation bank = r.bank();
+	Animation bank = r.animation();
 
 	// The first bank contains the background in the supported menu scenes.
 	if (bank.frames.empty() || bank.frames[0].image < 0)
@@ -247,7 +327,7 @@ Menu readMenu(const Bytes &data) {
 	r.curPos = 16;
 	Common::Array<Animation> banks;
 	for (uint i = 0; i < r.u32(8); ++i)
-		banks.push_back(r.bank());
+		banks.push_back(r.animation());
 	if (banks[0].frames.empty() || banks[0].frames[0].image < 0)
 		error("Tesoro: menu has no background");
 	Menu menu;

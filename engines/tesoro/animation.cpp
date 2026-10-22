@@ -50,8 +50,10 @@ bool AnimationPlayer::play(uint32 now, uint16 first, int last, bool loop, bool c
 	} else {
 		if (first >= _animation.frames.size() || last < -1)
 			return false;
+
+		// determine the end frame of the sequence (delimited by the next missing image)
 		uint end = first;
-		if (last == -1) {
+		if (last == -1) { // passing -1 means "calculate the end frame"
 			// A missing image on the next frame delimits
 			// the sequence. Looping includes that endpoint for displacement.
 			while (end + 1 < _animation.frames.size()) {
@@ -164,4 +166,4 @@ const Image *AnimationPlayer::currentImage() const {
 		? _animation.images[frame->image].get() : nullptr;
 }
 
-} // namespace Tesoro
+} // End of namespace Tesoro

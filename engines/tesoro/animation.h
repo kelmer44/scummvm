@@ -57,5 +57,5 @@ private:
 	AnimationState _state;
 };
 
-} // namespace Tesoro
+} // End of namespace Tesoro
 #endif
