@@ -56,16 +56,17 @@ private:
 	Menu _mainMenu, _newGameMenu;
 	Video::AVIDecoder _movie;
 	uint32 _deadline = 0, _pausedAt = 0;
-	uint _decodedMovieFrames = 0;
 
-	Common::Array<uint32> _depth;
+	// Scene clock in ms. It only advances while a scene is shown, and a single host
+	// delta of 500 ms or more (a stall or a dialog) is ignored, as in the original.
+	uint32 _gameTime = 0, _lastHostTime = 0;
+	uint _decodedMovieFrames = 0;
 
 	SceneData _scene;
 	SceneCamera _camera;
-	Common::ScopedPtr<SceneScenery> _scenery;
+	Common::ScopedPtr<Scene> _currentScene;
 
 	void startScene(const Common::String &name);
-	void drawScene(Graphics::Surface &surface, const Common::Array<SceneSprite> &sprites);
 
 	void init();
 	bool startMovie(uint number, State state);

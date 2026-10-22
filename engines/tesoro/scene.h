@@ -58,55 +58,80 @@ struct RoomEntry {
 // Resolve the floor origin for default entry; scene transitions can supply another position.
 bool findRoomEntry(const SceneData &scene, RoomEntry &entry);
 
-
 struct SceneSprite {
 	const Image *image = nullptr;
 	int32 x = 0, y = 0;
 	uint16 depth = 0;
 };
 
-class SceneryObject {
+// Base of every object a scene owns, whatever its kind.
+class SceneObject {
 public:
 	enum Flags { kActive = 2, kShown = 4, kHasAnimation = 16 };
-	SceneryObject(const SceneObjectRecord &record, const SceneGroup &group,
-	              const SceneData &scene, uint32 now);
+	virtual ~SceneObject() {}
+
 	void setActive(bool active);
 	void show(bool shown);
-	bool play(uint bank, uint32 now, uint16 first = 0, int last = -1,
-	          bool loop = false, bool cacheDuration = false);
-	void prepareFrame(uint32 now);
-	bool sprite(const SceneView &view, SceneSprite &sprite) const;
-	const AnimationState &animationState() const { return _players[_selected]->state(); }
+	bool play(uint bank, uint32 now, uint16 first = 0, int last = -1, bool loop = false, bool cacheDuration = false);
+
+	// Advances the selected bank and refreshes the hit bounds.
+	virtual void prepareFrame(uint32 now);
+	// Fills in the sprite this object submits for the frame; false when it draws nothing.
+	virtual bool sprite(const SceneView &view, SceneSprite &sprite) const;
+
+	const AnimationState &animationState() const { assert(!_players.empty()); return _players[_selected]->state(); }
 	uint32 flags() const { return _flags; }
+	uint32 kind() const { return _kind; }
+	uint64 nameId() const { return _nameId; }
 	uint16 depth() const { return _depth; }
 	int32 x() const { return _x; }
 	const SceneBounds &hitBounds() const { return _hitBounds; }
 
+protected:
+	SceneObject(const SceneObjectRecord &record, const SceneGroup &group, const SceneData &scene);
+
+	const AnimationPlayer &selectedPlayer() const { assert(!_players.empty()); return *_players[_selected]; }
+	int32 y() const { return _y; }
+
 private:
-	SceneryObject(const SceneryObject &) = delete;
-	SceneryObject &operator=(const SceneryObject &) = delete;
+	SceneObject(const SceneObject &) = delete;
+	SceneObject &operator=(const SceneObject &) = delete;
 
 	Common::Array<Common::SharedPtr<Animation>> _banks;
 	Common::Array<Common::SharedPtr<AnimationPlayer>> _players;
 	uint _selected = 0;
+	uint32 _kind;
+	uint64 _nameId;
 	uint32 _flags = kActive | kHasAnimation;
 	int32 _x, _y;
 	uint16 _depth;
 	SceneBounds _hitBounds;
 };
 
-// The scenery portion of a scene; actor and interactive-object scheduling is separate.
-class SceneScenery {
+// Kind 3: backgrounds and ambient animation.
+class PropObject : public SceneObject {
 public:
-	SceneScenery(const SceneData &scene, uint32 now);
+	PropObject(const SceneObjectRecord &record, const SceneGroup &group, const SceneData &scene, uint32 now);
+	bool sprite(const SceneView &view, SceneSprite &sprite) const override;
+};
+
+// A loaded scene owns every object in its LVL. Kinds without a SceneObject subclass
+// yet are built as inert placeholders (with a warning) so nothing is silently dropped.
+class Scene {
+public:
+	Scene(const SceneData &scene, uint32 now);
 	void appendSprites(uint32 now, const SceneCamera &camera, Common::Array<SceneSprite> &sprites);
 
 private:
 	struct Group {
 		int32 parallax;
-		Common::Array<Common::SharedPtr<SceneryObject>> objects;
+		Common::Array<Common::SharedPtr<SceneObject>> objects;
 	};
 	Common::Array<Group> _groups;
+	Common::Array<Common::SharedPtr<SceneObject>> _objects;
+	uint32 _warnedKinds = 0;
+
+	SceneObject *createObject(const SceneObjectRecord &record, const SceneGroup &group,  const SceneData &scene, uint32 now);
 };
 
 } // namespace Tesoro
