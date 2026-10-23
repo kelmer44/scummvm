@@ -88,6 +88,9 @@ public:
 	uint16 depth() const { return _depth; }
 	int32 x() const { return _x; }
 	int32 y() const { return _y; }
+	// The projection divisor of the group the object is in; it decides how its view moves with the camera.
+	int32 parallax() const { return _parallax; }
+	void setParallax(int32 parallax) { _parallax = parallax; }
 	const SceneBounds &hitBounds() const { return _hitBounds; }
 	// True while the selected bank is still playing an animation.
 	bool isPlaying() const { return !_players.empty() && (_players[_selected]->state().flags & AnimationPlayer::kPlaying); }
@@ -118,6 +121,7 @@ private:
 	uint32 _flags = kActive | kHasAnimation;
 	int32 _x, _y;
 	uint16 _depth;
+	int32 _parallax = 300;
 	SceneBounds _hitBounds;
 };
 
@@ -170,7 +174,13 @@ public:
 class Scene {
 public:
 	Scene(const SceneData &scene, uint32 now);
-	void appendSprites(uint32 now, const SceneCamera &camera, Common::Array<SceneSprite> &sprites);
+	void appendSprites(uint32 now, Common::Array<SceneSprite> &sprites);
+
+	// Each scene has its own camera, which starts on the room's floor.
+	SceneCamera &camera() { return _camera; }
+	const SceneCamera &camera() const { return _camera; }
+	// Where the room places a character by default, its camera bounds and its music cue.
+	const RoomEntry &entry() const { return _entry; }
 
 	// Finds an object by its LVL name (compared by the original's 64-bit encoding).
 	// If several objects share a name, the first in LVL order is returned.
@@ -198,6 +208,8 @@ private:
 	Common::Array<Common::SharedPtr<SceneObject>> _objects;
 	uint32 _warnedKinds = 0;
 	const FloorObject *_floor = nullptr;
+	SceneCamera _camera;
+	RoomEntry _entry;
 
 	SceneObject *deliver(uint32 now, SceneObject *object, const char *name, const SceneMessage &message);
 	SceneObject *createObject(const SceneObjectRecord &record, const SceneGroup &group,  const SceneData &scene, uint32 now);

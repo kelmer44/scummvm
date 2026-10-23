@@ -66,11 +66,10 @@ private:
 	uint32 _gameTime = 0, _lastHostTime = 0;
 	uint _decodedMovieFrames = 0;
 
-	SceneData _scene;
-	SceneCamera _camera;
 	SceneRenderer _renderer;
-	Common::ScopedPtr<Scene> _currentScene;
-	RoomEntry _roomEntry;
+	// Every scene that has been loaded stays loaded, with whatever state the game left in it.
+	Common::HashMap<Common::String, Common::SharedPtr<Scene>> _scenes;
+	Common::SharedPtr<Scene> _currentScene;
 	Common::SharedPtr<JimObject> _jim;
 
 	ScriptLibrary _library;
@@ -85,7 +84,10 @@ private:
 	bool _speaking = false, _speechMuted = false, _speechSkipped = false;
 	uint32 _speechUntil = 0;
 
-	void startScene(const Common::String &name);
+	// Loads a scene by file name the first time it is asked for.
+	Common::SharedPtr<Scene> loadScene(const Common::String &name);
+	// Moves Jim into a scene, at a position, and makes it the scene that is shown.
+	void placeJim(const Common::SharedPtr<Scene> &scene, int32 x, int32 y);
 	void startAdventure();
 	void stopAdventure();
 	void updateSpeech();
@@ -104,7 +106,7 @@ private:
 	bool isMovieFinished() const override { return _state != kAdventureMovie; }
 	void playSound(const Common::String &name) override;
 	void playMusic(uint track) override;
-	void doNative(uint scriptType, uint ordinal) override;
+	void doNative(uint scriptType, uint ordinal, Script &script) override;
 	void walk(SceneObject &object, int x, int y, Script &waiter) override;
 	void look(SceneObject &object, ScriptOp::Direction direction) override;
 

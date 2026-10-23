@@ -33,7 +33,7 @@ const uint32 kSpeechPause = 201;
 } // namespace
 
 Script::Script(ScriptHost &host, const ScriptBlock &block, uint64 labelId, uint8 *variables, Scene &scene)
-	: _host(host), _block(block), _variables(variables), _scene(scene) {
+	: _host(host), _block(block), _variables(variables), _scene(&scene) {
 	_participants.resize(block.participants.size());
 	for (uint i = 0; i < _participants.size(); ++i)
 		_participants[i] = scene.find(block.participants[i]);
@@ -52,7 +52,7 @@ SceneObject *Script::participant(int slot) {
 		error("Tesoro: %s (%s): no participant %d.", _block.file.c_str(), _block.name.c_str(), slot);
 	SceneObject *&object = _participants[slot - 1];
 	if (!object)
-		object = _scene.find(_block.participants[slot - 1]);
+		object = _scene->find(_block.participants[slot - 1]);
 	if (!object)
 		error("Tesoro: %s (%s): participant %d is not in the scene.", _block.file.c_str(), _block.name.c_str(), slot);
 	return object;
@@ -140,16 +140,16 @@ void Script::execute() {
 
 		case ScriptOp::kRun:
 			if (op.block) {
-				_host.startScript(*op.block, op.labelId, _variables, _scene);
+				_host.startScript(*op.block, op.labelId, _variables, *_scene);
 				return;
 			}
 			// A run of FANMTRONO is a native action, chosen by its label.
-			_host.doNative(20, op.labelId == encodeName("ir") ? 0 : 1);
+			_host.doNative(20, op.labelId == encodeName("ir") ? 0 : 1, *this);
 			++_pc;
 			break;
 
 		case ScriptOp::kMessage: {
-			Scene *target = &_scene;
+			Scene *target = _scene;
 			if (op.scope != ScriptOp::kCurrentScene) {
 				target = _host.scene(op.scope, op.level);
 				if (!target)
@@ -189,7 +189,7 @@ void Script::execute() {
 			break;
 
 		case ScriptOp::kNative:
-			_host.doNative(_block.nativeType, op.value);
+			_host.doNative(_block.nativeType, op.value, *this);
 			++_pc;
 			break;
 

@@ -314,6 +314,14 @@ SceneObject *Scene::createObject(const SceneObjectRecord &record, const SceneGro
 }
 
 Scene::Scene(const SceneData &scene, uint32 now) {
+	// Rooms without a floor of their own (the map and the board games, for instance) have no entry
+	// point yet; the camera then stays where it is.
+	if (findRoomEntry(scene, _entry)) {
+		_camera.setBounds(_entry.bounds);
+		_camera.setPosition(_entry.x, _entry.y);
+	} else {
+		warning("Tesoro: A scene has no room with a floor to enter.");
+	}
 	const SceneObjectRecord *room = nullptr;
 	for (uint i = 0; i < scene.groups.size(); ++i) {
 		const SceneGroup &source = scene.groups[i];
@@ -325,6 +333,7 @@ Scene::Scene(const SceneData &scene, uint32 now) {
 				room = &record;
 			Common::SharedPtr<SceneObject> object(createObject(record, source, scene, now));
 			_objects.push_back(object);
+			object->setParallax(source.parallax);
 			if (!(object->flags() & SceneObject::kGrouped))
 				continue;
 			uint at = 0;
@@ -349,6 +358,7 @@ void Scene::addObject(const Common::SharedPtr<SceneObject> &object, uint group) 
 	if (group >= _groups.size())
 		error("Tesoro: The scene has no group %u.", group);
 	_objects.push_back(object);
+	object->setParallax(_groups[group].parallax);
 	Common::Array<Common::SharedPtr<SceneObject>> &list = _groups[group].objects;
 	uint at = 0;
 	while (at < list.size() && list[at]->x() >= object->x())
@@ -410,10 +420,10 @@ SceneObject *Scene::deliver(uint32 now, SceneObject *object, const char *name, c
 	return nullptr;
 }
 
-void Scene::appendSprites(uint32 now, const SceneCamera &camera, Common::Array<SceneSprite> &sprites) {
+void Scene::appendSprites(uint32 now, Common::Array<SceneSprite> &sprites) {
 	for (uint i = 0; i < _groups.size(); ++i) {
 		const Group &group = _groups[i];
-		SceneView view = camera.groupView(group.parallax);
+		SceneView view = _camera.groupView(group.parallax);
 		for (uint j = 0; j < group.objects.size(); ++j) {
 			SceneObject &object = *group.objects[j];
 			if ((object.flags() & (SceneObject::kActive | SceneObject::kShown)) !=

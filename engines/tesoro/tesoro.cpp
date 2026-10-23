@@ -62,23 +62,36 @@ Common::String TesoroEngine::getGameId() const {
 	return _gameDescription->gameId;
 }
 
-void TesoroEngine::startScene(const Common::String &name) {
-	_scripts.clear();
+namespace {
+
+// The scenes of the game by number, which is how scripts refer to them (LEVELn).
+const char *const kSceneNames[] = {
+	"DESPACHO.LVL", "PUERTO.LVL", "TABERNA.LVL", "CUBIERTA.LVL", "CAMAROTE.LVL", "ALMACEN.LVL",
+	"COCINA.LVL", "PLAYA.LVL", "MAPA.LVL", "POBLADO.LVL", "PANTANO.LVL", "CAMPAMENTO.LVL",
+	"VOLCAN.LVL", "ARMARIO.LVL", "TABLERO.LVL", "TIERRA.LVL", "RISCO.LVL", "CUBIERTA2.LVL",
+	"CAMAROTE2.LVL", "ALMACEN2.LVL", "COCINA2.LVL", "LUCHA.LVL", "TRONO.LVL", "ENTRADA.LVL",
+	"1.LVL", "2.LVL", "3.LVL", "4.LVL", "5.LVL", "6.LVL", "7.LVL", "8.LVL", "9.LVL", "10.LVL",
+	"11.LVL", "12.LVL", "13.LVL", "14.LVL", "15.LVL", "16.LVL", "17.LVL", "18.LVL", "19.LVL",
+	"20.LVL", "RISCOFINAL.LVL", "FINAL.LVL", "CREDITOS.LVL"
+};
+
+} // namespace
+
+Common::SharedPtr<Scene> TesoroEngine::loadScene(const Common::String &name) {
+	Common::SharedPtr<Scene> &scene = _scenes[name];
+	if (!scene)
+		scene.reset(new Scene(readScene(_archive.read(name)), _gameTime));
+	return scene;
+}
+
+void TesoroEngine::placeJim(const Common::SharedPtr<Scene> &scene, int32 x, int32 y) {
 	_jim->leave();
-	_currentScene.reset();
-	_scene = readScene(_archive.read(name));
-
-	if (!findRoomEntry(_scene, _roomEntry))
-		error("Tesoro: Failed to find room entry.");
-	_camera.setBounds(_roomEntry.bounds);
-	_camera.setPosition(_roomEntry.x, _roomEntry.y);
-
-	_gameTime = 0;
-	_lastHostTime = _system->getMillis();
-	_currentScene.reset(new Scene(_scene, _gameTime));
-
-	_state = kAdventure;
-	CursorMan.showMouse(false);
+	scene->addObject(_jim, 0);
+	_jim->place(*scene, x, y, _gameTime);
+	scene->camera().setPosition(x, y);
+	_currentScene = scene;
+	if (scene->entry().musicCue)
+		playMusic(scene->entry().musicCue);
 }
 
 void TesoroEngine::init() {
@@ -258,7 +271,7 @@ Common::Error TesoroEngine::run() {
 void TesoroEngine::draw() {
 	if(_state == kAdventure && _currentScene) {
 		Common::Array<SceneSprite> sprites;
-		_currentScene->appendSprites(_gameTime, _camera, sprites);
+		_currentScene->appendSprites(_gameTime, sprites);
 		_renderer.draw(*_screen->surfacePtr(), sprites);
 		if (!_subtitle.empty() && _font && (ConfMan.getBool("subtitles") || ConfMan.getBool("speech_mute")))
 			_renderer.drawNarration(*_screen->surfacePtr(), *_font, _subtitle, 0x001f);
@@ -317,10 +330,15 @@ void TesoroEngine::update() {
 void TesoroEngine::startAdventure() {
 	memset(_variables, 0, sizeof(_variables));
 	_inputEnabled = true;
-	startScene("PUERTO.LVL");
-	// The game puts Jim at the floor's origin, active and shown, before the script starts.
-	_currentScene->addObject(_jim, 0);
-	_jim->place(*_currentScene, _roomEntry.x, _roomEntry.y, _gameTime);
+	_scripts.clear();
+	_scenes.clear();
+	_gameTime = 0;
+	_lastHostTime = _system->getMillis();
+	// The game puts Jim at the floor's origin of the harbour, active and shown, before the script starts.
+	Common::SharedPtr<Scene> harbour = loadScene("PUERTO.LVL");
+	placeJim(harbour, harbour->entry().x, harbour->entry().y);
+	_state = kAdventure;
+	CursorMan.showMouse(false);
 	_jim->setActive(true);
 	_jim->show(true);
 	const ScriptBlock *block = _library.find("FANPRESENT");
@@ -337,6 +355,7 @@ void TesoroEngine::stopAdventure() {
 	_speaking = false;
 	_subtitle.clear();
 	_currentScene.reset();
+	_scenes.clear();
 }
 
 void TesoroEngine::updateScripts() {
@@ -371,7 +390,17 @@ Audio::SeekableAudioStream *TesoroEngine::openWav(const Common::String &name) {
 }
 
 Scene *TesoroEngine::scene(ScriptOp::Scope scope, int level) {
-	return scope == ScriptOp::kCurrentScene ? _currentScene.get() : nullptr;
+	switch (scope) {
+	case ScriptOp::kCurrentScene:
+		return _currentScene.get();
+	case ScriptOp::kLevel:
+		if (level < 0 || uint(level) >= ARRAYSIZE(kSceneNames))
+			error("Tesoro: A script names scene %d, which does not exist.", level);
+		return loadScene(kSceneNames[level]).get();
+	case ScriptOp::kInventory:
+		break;
+	}
+	error("Tesoro: A script sends a message to the inventory, which is not implemented.");
 }
 
 void TesoroEngine::startScript(const ScriptBlock &block, uint64 labelId, uint8 *variables, Scene &scene) {
@@ -422,13 +451,13 @@ void TesoroEngine::playMusic(uint track) {
 	warning("Tesoro: CD audio is not implemented (track %u).", track);
 }
 
-void TesoroEngine::doNative(uint scriptType, uint ordinal) {
+void TesoroEngine::doNative(uint scriptType, uint ordinal, Script &script) {
 	if (scriptType == 1) {
 		switch (ordinal) {
 		case 0: // Jim is hidden and activated, and the view goes to him.
 			_jim->show(false);
 			_jim->setActive(true);
-			_camera.setPosition(_jim->x(), _jim->y());
+			_currentScene->camera().setPosition(_jim->x(), _jim->y());
 			return;
 		case 1:
 		case 2:
@@ -438,14 +467,29 @@ void TesoroEngine::doNative(uint scriptType, uint ordinal) {
 			_jim->show(true);
 			return;
 		case 3: {
+			// The ship of the harbour appears and sails in a loop.
+			Common::SharedPtr<Scene> harbour = loadScene("PUERTO.LVL");
 			SceneMessage show;
 			show.kind = SceneMessage::kShow;
 			show.on = true;
-			_currentScene->send(_gameTime, "BARCO", show);
+			harbour->send(_gameTime, "BARCO", show);
 			SceneMessage play;
 			play.kind = SceneMessage::kPlay;
 			play.mode = SceneMessage::kLoop;
-			_currentScene->send(_gameTime, "BARCO", play);
+			harbour->send(_gameTime, "BARCO", play);
+			return;
+		}
+		case 5: {
+			// Jim goes through the harbour's door into the office. The door is left active but
+			// hidden, the script continues in the office, and Jim stands at its door.
+			SceneObject *door = loadScene("PUERTO.LVL")->find("PUERTA1");
+			if (!door)
+				error("Tesoro: The harbour has no door.");
+			door->setActive(true);
+			door->show(false);
+			Common::SharedPtr<Scene> office = loadScene("DESPACHO.LVL");
+			script.setScene(*office);
+			placeJim(office, 550, 100);
 			return;
 		}
 		default:
