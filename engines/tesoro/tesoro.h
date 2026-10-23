@@ -65,6 +65,9 @@ private:
 	// delta of 500 ms or more (a stall or a dialog) is ignored, as in the original.
 	uint32 _gameTime = 0, _lastHostTime = 0;
 	uint _decodedMovieFrames = 0;
+	// A movie of the adventure leaves its last frame on the screen for half a second.
+	bool _movieHold = false;
+	uint32 _movieHoldUntil = 0;
 
 	SceneRenderer _renderer;
 	// Every scene that has been loaded stays loaded, with whatever state the game left in it.

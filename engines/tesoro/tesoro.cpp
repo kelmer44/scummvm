@@ -165,7 +165,9 @@ void TesoroEngine::stopMovie() {
 	debug("Tesoro: stopping movie");
 	_movie.close();
 	if (_state == kAdventureMovie) {
-		_state = kAdventure;
+		_movieHold = true;
+		_movieHoldUntil = _system->getMillis() + 500;
+		return;
 	} else if (_state == kNewGameMovie) {
 		_state = kCensorship;
 		_deadline = _system->getMillis() + 5500; // FANMMENU/nuevo in ANIMS.DLG.
@@ -194,7 +196,11 @@ void TesoroEngine::handleEvent(const Common::Event &event) {
 		return;
 	}
 	if (_state == kStartupMovie || _state == kNewGameMovie || _state == kAdventureMovie) {
-		if (event.type == Common::EVENT_KEYDOWN && event.kbd.keycode == Common::KEYCODE_ESCAPE)
+		if (_movieHold)
+			return;
+		// A movie of the adventure can also be skipped with the mouse.
+		if ((event.type == Common::EVENT_KEYDOWN && event.kbd.keycode == Common::KEYCODE_ESCAPE) ||
+		    (_state == kAdventureMovie && event.type == Common::EVENT_LBUTTONDOWN))
 			stopMovie();
 		return;
 	}
@@ -307,7 +313,13 @@ void TesoroEngine::update() {
 		return;
 	if (_state == kAdventure && elapsed < 500)
 		_gameTime += elapsed;
-	if (_state == kStartupMovie || _state == kNewGameMovie || _state == kAdventureMovie) {
+	if (_state == kAdventureMovie && _movieHold) {
+		if (int32(now - _movieHoldUntil) >= 0) {
+			_movieHold = false;
+			_state = kAdventure;
+			CursorMan.showMouse(false);
+		}
+	} else if (_state == kStartupMovie || _state == kNewGameMovie || _state == kAdventureMovie) {
 		if (_movie.endOfVideo()) {
 			stopMovie();
 		} else if (_movie.needsUpdate()) {
@@ -341,6 +353,7 @@ void TesoroEngine::startAdventure() {
 	_inputEnabled = true;
 	_scripts.clear();
 	_scenes.clear();
+	_movieHold = false;
 	_gameTime = 0;
 	_lastHostTime = _system->getMillis();
 	// The game puts Jim at the floor's origin of the harbour, active and shown, before the script starts.
