@@ -167,6 +167,24 @@ Animation Reader::animation() {
 		f.type = u16(curPos + 20);
 		uint extra = u16(curPos + 22);
 		check(curPos + 24, extra);
+		// Types 2 and 4 carry a list of points after a count and a few unused bytes.
+		if (f.type == 2 || f.type == 4) {
+			const uint entry = f.type == 2 ? 4 : 6, first = f.type == 2 ? 6 : 8;
+			const uint count = u16(curPos + 24);
+			for (uint p = 0; p < count; ++p) {
+				// A few frames (the kitchen's) claim a point that their data does not hold.
+				const bool present = first + (p + 1) * entry <= extra;
+				const int16 x = present ? u16(curPos + 24 + first + p * entry) : 0;
+				const int16 y = present ? u16(curPos + 26 + first + p * entry) : 0;
+				if (f.type == 4) {
+					FloorPoint point = {x, y, uint16(present ? u16(curPos + 28 + first + p * entry) : 0)};
+					f.floorPoints.push_back(point);
+				} else {
+					PathPoint point = {x, y};
+					f.pathPoints.push_back(point);
+				}
+			}
+		}
 		curPos += 24 + extra;
 		bank.frames.push_back(f);
 	}

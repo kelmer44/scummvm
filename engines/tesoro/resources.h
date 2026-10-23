@@ -53,11 +53,25 @@ struct Image {
     Common::Array<uint32> pixels;
 };
 
+// A corner of a floor's walkable outline, with the scale of a character standing there
+// (256 is full size). Frames of type 4 hold them.
+struct FloorPoint {
+    int16 x, y;
+    uint16 scale;
+};
+
+// A point of a path object's route. Frames of type 2 hold them
+struct PathPoint {
+    int16 x, y;
+};
+
 struct Frame {
     int16 x, y, dx, dy, image;
     int16 hitX, hitY;
     uint16 hitW, hitH;
     uint16 duration, type;
+    Common::Array<FloorPoint> floorPoints; // type 4
+    Common::Array<PathPoint> pathPoints;   // type 2
 };
 
 struct Animation {

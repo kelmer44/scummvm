@@ -210,6 +210,58 @@ CharacterObject::CharacterObject(const SceneObjectRecord &record, const SceneGro
 	show(true);
 }
 
+FloorObject::FloorObject(const SceneObjectRecord &record, const SceneGroup &group,
+                         const SceneData &scene, uint32 now)
+	: SceneObject(record, group, scene) {
+	if (record.parameters.size() < 13 || record.bankIndices.empty())
+		error("Tesoro: Invalid floor object %s.", record.name.c_str());
+	const uint first = record.parameters[0];
+	if (!play(0, now, first, int(first), false))
+		error("Tesoro: Invalid floor frame for %s.", record.name.c_str());
+	Animation &bank = *scene.banks[record.bankIndices[0]];
+	bank.frames[first].dx = 0;
+	bank.frames[first].dy = 0;
+	addFlags(kGrouped);
+}
+
+int FloorObject::scaleAt(int32 x, int32 y) const {
+	const Frame *frame = selectedPlayer().currentFrame();
+	if (!frame || frame->type != 4)
+		return 256;
+	// The outline is walked edge by edge. The first edge that is crossed above or below the
+	// point gives one scale, the next edge on the other side of the point another one, and
+	// the result is the blend of the two by the point's height between those edges.
+	const Common::Array<FloorPoint> &points = frame->floorPoints;
+	const int32 px = x - this->x(), py = y - this->y();
+	bool found = false, below = false;
+	int32 firstScale = 256, firstY = 0;
+	for (uint i = 0; i + 1 < points.size(); ++i) {
+		const FloorPoint *left = &points[i], *right = &points[i + 1];
+		if (left->x >= right->x)
+			SWAP(left, right);
+		if (px < left->x || px > right->x || left->x == right->x)
+			continue;
+		const int32 width = right->x - left->x;
+		const int32 edgeY = ((right->y - left->y) * (px - left->x)) / width + left->y;
+		const int32 edgeScale = (int32(right->scale) - int32(left->scale)) * (px - left->x) / width + left->scale;
+		if (!found) {
+			found = true;
+			firstScale = edgeScale;
+			below = py < edgeY;
+			firstY = edgeY;
+			continue;
+		}
+		if (below ? edgeY <= py : py <= edgeY) {
+			if (firstY == edgeY)
+				return edgeScale;
+			if (!below)
+				return ((py - firstY) * (edgeScale - firstScale)) / (edgeY - firstY) + firstScale;
+			return ((py - edgeY) * (firstScale - edgeScale)) / (firstY - edgeY) + edgeScale;
+		}
+	}
+	return found ? firstScale : 256;
+}
+
 // Stands in for a kind that has no SceneObject subclass yet: it keeps the object
 // in the scene but draws nothing and has no behaviour.
 class UnportedObject : public SceneObject {
@@ -225,6 +277,8 @@ SceneObject *Scene::createObject(const SceneObjectRecord &record, const SceneGro
 	switch (record.kind) {
 	case 3:
 		return new PropObject(record, group, scene, now);
+	case 7:
+		return new FloorObject(record, group, scene, now);
 	case 5: // characters
 		object = new CharacterObject(record, group, scene, now);
 		limits = "it is drawn, but its behaviour is not implemented";
@@ -253,12 +307,15 @@ SceneObject *Scene::createObject(const SceneObjectRecord &record, const SceneGro
 }
 
 Scene::Scene(const SceneData &scene, uint32 now) {
+	const SceneObjectRecord *room = nullptr;
 	for (uint i = 0; i < scene.groups.size(); ++i) {
 		const SceneGroup &source = scene.groups[i];
 		Group group;
 		group.parallax = source.parallax;
 		for (uint j = 0; j < source.objects.size(); ++j) {
 			const SceneObjectRecord &record = source.objects[j];
+			if (record.kind == 1)
+				room = &record;
 			Common::SharedPtr<SceneObject> object(createObject(record, source, scene, now));
 			_objects.push_back(object);
 			if (!(object->flags() & SceneObject::kGrouped))
@@ -269,6 +326,15 @@ Scene::Scene(const SceneData &scene, uint32 now) {
 			group.objects.insert_at(at, object);
 		}
 		_groups.push_back(group);
+	}
+	// The room names its floor in the first twelve bytes of its record.
+	if (room && room->parameters.size() >= 12 && room->parameters[0]) {
+		Common::String name;
+		for (uint i = 0; i < 12 && room->parameters[i]; ++i)
+			name += char(room->parameters[i]);
+		const SceneObject *floor = find(name);
+		if (floor && floor->kind() == 7)
+			_floor = static_cast<const FloorObject *>(floor);
 	}
 }
 

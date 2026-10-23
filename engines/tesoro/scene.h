@@ -85,6 +85,7 @@ public:
 	uint64 nameId() const { return _nameId; }
 	uint16 depth() const { return _depth; }
 	int32 x() const { return _x; }
+	int32 y() const { return _y; }
 	const SceneBounds &hitBounds() const { return _hitBounds; }
 	// True while the selected bank is still playing an animation.
 	bool isPlaying() const { return !_players.empty() && (_players[_selected]->state().flags & AnimationPlayer::kPlaying); }
@@ -96,7 +97,6 @@ protected:
 	// Where the current frame is drawn, shared by every object that shows its animation.
 	bool frameSprite(const SceneView &view, SceneSprite &sprite) const;
 	const AnimationPlayer &selectedPlayer() const { assert(!_players.empty()); return *_players[_selected]; }
-	int32 y() const { return _y; }
 
 private:
 	SceneObject(const SceneObject &) = delete;
@@ -147,6 +147,16 @@ public:
 	CharacterObject(const SceneObjectRecord &record, const SceneGroup &group, const SceneData &scene, uint32 now);
 };
 
+// Kind 7: the walkable ground of a room. It is not drawn; its outline gives the scale of
+// the characters that stand on it.
+class FloorObject : public SceneObject {
+public:
+	FloorObject(const SceneObjectRecord &record, const SceneGroup &group,
+	            const SceneData &scene, uint32 now);
+	// The scale (256 is full size) of a character at a point of the room.
+	int scaleAt(int32 x, int32 y) const;
+};
+
 // A loaded scene owns every object in its LVL. Kinds without a SceneObject subclass
 // yet are built as inert placeholders (with a warning) so nothing is silently dropped.
 class Scene {
@@ -164,6 +174,9 @@ public:
 	SceneObject *send(uint32 now, const Common::String &target, const SceneMessage &message);
 	SceneObject *send(uint32 now, uint64 target, const SceneMessage &message);
 
+	// The floor that the room names, if it has one.
+	const FloorObject *floor() const { return _floor; }
+
 private:
 	struct Group {
 		int32 parallax;
@@ -172,6 +185,7 @@ private:
 	Common::Array<Group> _groups;
 	Common::Array<Common::SharedPtr<SceneObject>> _objects;
 	uint32 _warnedKinds = 0;
+	const FloorObject *_floor = nullptr;
 
 	SceneObject *deliver(uint32 now, SceneObject *object, const char *name, const SceneMessage &message);
 	SceneObject *createObject(const SceneObjectRecord &record, const SceneGroup &group,  const SceneData &scene, uint32 now);
