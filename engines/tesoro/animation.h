@@ -47,8 +47,11 @@ public:
 	void update(uint32 now);
 	void pause(uint32 now);
 	void resume(uint32 now);
+	// Puts back the flags that a player had when its state was saved (see pause).
+	void restoreFlags(uint32 flags) { _state.flags = flags; }
 
 	const AnimationState &state() const { return _state; }
+	const Animation &animation() const { return _animation; }
 	const Frame *currentFrame() const;
 	const Image *currentImage() const;
 

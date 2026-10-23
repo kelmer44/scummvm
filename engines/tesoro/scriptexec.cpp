@@ -59,6 +59,10 @@ SceneObject *Script::participant(int slot) {
 }
 
 void Script::finish() {
+	// Whoever talked in the script goes back to what they were doing.
+	for (uint i = 0; i < _participants.size(); ++i)
+		if (_participants[i] && _participants[i]->hasSavedAnimation())
+			_participants[i]->restoreAnimation(_host.gameTime());
 	_finished = true;
 	_host.setInputEnabled(true);
 }

@@ -49,6 +49,17 @@ JimObject::JimObject(const Common::Array<Common::SharedPtr<Animation>> &banks)
 	: SceneObject(0xffff, encodeName("JIM"), banks, 350, 20, kDepth) {
 	if (banks.size() != ARRAYSIZE(kBanks))
 		error("Tesoro: Jim needs %u animation banks.", (uint)ARRAYSIZE(kBanks));
+	// His words are yellow and wrapped at 300 pixels, what the narrator says is blue, and he talks
+	// in the bank that faces the way he looks: left, right, down, then up.
+	TalkConfig config;
+	config.colour = 0xffc0;
+	config.width = 300;
+	config.narrationColour = 0x1f;
+	config.banks.push_back(0);
+	config.banks.push_back(1);
+	config.banks.push_back(7);
+	config.banks.push_back(8);
+	setTalkConfig(config);
 	look(ScriptOp::kLeft, 0);
 }
 
@@ -76,8 +87,39 @@ void JimObject::leave() {
 	_waiter = nullptr;
 }
 
+void JimObject::selectTalkBank(uint32 now) {
+	const uint choice = _direction == ScriptOp::kLeft ? 0 : _direction == ScriptOp::kRight ? 1
+		: _direction == ScriptOp::kDown ? 2 : 3;
+	playBank(talkConfig().banks[choice], now, 1, 1);
+}
+
+bool JimObject::backSprite(const SceneView &view, SceneSprite &sprite) const {
+	if (!showsTalk() || (flags() & (kActive | kShown)) != (kActive | kShown))
+		return false;
+	const AnimationPlayer &player = selectedPlayer();
+	const Animation &bank = player.animation();
+	if (bank.frames.empty() || bank.frames[0].image < 0)
+		return false;
+	const Frame &frame = bank.frames[0];
+	sprite.image = bank.images[frame.image].get();
+	sprite.scale = _scale;
+	sprite.x = ((frame.x * _scale) >> 8) + x() - view.x + 320 + player.state().movementX;
+	sprite.y = (view.y - ((frame.y * _scale) >> 8)) - y() - player.state().movementY + 240;
+	sprite.depth = depth() + 1;
+	return true;
+}
+
+void JimObject::speechAnchor(const SceneView &view, int32 &outX, int32 &outY) const {
+	SceneObject::speechAnchor(view, outX, outY);
+	// His words sit a fixed height above his feet, less the size of his picture on the floor.
+	const Frame *frame = selectedPlayer().currentFrame();
+	const int32 hitY = frame ? frame->hitY : 0;
+	outY = (0xbe - ((hitY * _scale) >> 8)) - y() + view.y;
+}
+
 void JimObject::look(ScriptOp::Direction direction, uint32 now) {
 	_walking = false;
+	_walkFlag = false;
 	_direction = direction;
 	// Standing is a single frame of the idle bank for each direction.
 	play(kIdleBank, now, direction - 1, direction - 1, false);
@@ -86,11 +128,15 @@ void JimObject::look(ScriptOp::Direction direction, uint32 now) {
 void JimObject::startWalk(int32 x, int32 y, Script *waiter, uint32 now) {
 	_walking = false;
 	if (!_scene || !_scene->floor()) {
-		if (waiter)
+		// Without a floor he does not walk, and the script that waits for him goes on.
+		if (waiter) {
+			look(_direction, now);
 			waiter->actionDone();
+		}
 		return;
 	}
 	_walking = true;
+	_walkFlag = true;
 	_fixedX = JimObject::x() * 256;
 	_fixedY = JimObject::y() * 256;
 	_targetX = x;
@@ -106,7 +152,7 @@ void JimObject::startWalk(int32 x, int32 y, Script *waiter, uint32 now) {
 
 	const uint bank = kWalkBank + _direction;
 	if (selectedBank() != bank || !isPlaying()) {
-		play(bank, now, 1, -1, true);
+		playBank(bank, now, 1, -1, true);
 		_lastMoveX = _lastMoveY = 0;
 	}
 }
@@ -138,9 +184,11 @@ void JimObject::update(uint32 now) {
 		moveTo(_targetX, _targetY);
 		_walking = false;
 		if (_waiter) {
-			// The script goes on; his scale is not refreshed on this frame.
+			// The script goes on, after he turns to face the way that he walked. His scale
+			// is not refreshed on this frame.
 			Script *waiter = _waiter;
 			_waiter = nullptr;
+			look(_direction, now);
 			waiter->actionDone();
 			return;
 		}

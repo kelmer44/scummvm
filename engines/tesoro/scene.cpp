@@ -126,17 +126,100 @@ void SceneObject::show(bool shown) {
 	_flags = (_flags & ~uint32(kShown)) | (shown ? kShown : 0);
 }
 
+namespace {
+Common::RandomSource *g_mouthRandom = nullptr;
+}
+
+void SceneObject::setRandomSource(Common::RandomSource *random) {
+	g_mouthRandom = random;
+}
+
 bool SceneObject::play(uint bank, uint32 now, uint16 first, int last,
                        bool loop, bool cacheDuration) {
 	if (bank >= _players.size() || !_players[bank]->play(now, first, last, loop, cacheDuration))
 		return false;
 	_selected = bank;
+	// A new animation replaces the one that talking was going to put back.
+	_animationSaved = false;
 	return true;
+}
+
+void SceneObject::playBank(uint bank, uint32 now, uint16 first, int last, bool loop) {
+	if (bank >= _players.size() || !_players[bank]->play(now, first, last, loop))
+		error("Tesoro: Invalid animation for an object.");
+	_selected = bank;
+}
+
+void SceneObject::turn(int, uint32) {
+	error("Tesoro: An object that cannot turn is asked to.");
+}
+
+void SceneObject::selectTalkBank(uint32 now) {
+	if (_talk.banks.empty())
+		return;
+	playBank(_talk.banks[0], now, 1, 1);
+}
+
+void SceneObject::beginSpeech(uint32 now, bool mouthMoves) {
+	if (!_talkable)
+		error("Tesoro: An object that cannot talk is asked to.");
+	_speaking = true;
+	_mouthMoves = mouthMoves;
+	if (!_animationSaved) {
+		// What it was showing is kept, frozen, until it is put back.
+		_animationSaved = true;
+		_players[_selected]->pause(now);
+		_savedBank = _selected;
+		_savedFlags = _players[_selected]->state().flags;
+	}
+	_lastMouthChange = now;
+	selectTalkBank(now);
+}
+
+void SceneObject::restoreAnimation(uint32 now) {
+	if (!_animationSaved)
+		return;
+	_animationSaved = false;
+	_selected = _savedBank;
+	_players[_selected]->restoreFlags(_savedFlags);
+	_players[_selected]->resume(now);
+}
+
+void SceneObject::speechAnchor(const SceneView &view, int32 &outX, int32 &outY) const {
+	// Above the head: the middle of the frame's picture, or of its hit box when it has none.
+	const AnimationPlayer &player = selectedPlayer();
+	const Frame *frame = player.currentFrame();
+	const int32 originX = _x + 320, originY = 240 - _y;
+	if (!frame) {
+		outX = originX - view.x;
+		outY = originY + view.y;
+		return;
+	}
+	if (const Image *image = player.currentImage())
+		outX = frame->x + originX + (image->w >> 1);
+	else
+		outX = int16(frame->hitW) / 2 + originX + frame->hitX;
+	outY = originY - frame->hitY - 0x32;
+	outX -= view.x;
+	outY += view.y;
 }
 
 void SceneObject::prepareFrame(uint32 now) {
 	if (_players.empty())
 		return;
+	if (_talkable && showsTalk()) {
+		// While talking, the first frame of the talking bank is a closed mouth and the others
+		// are open ones. A mouth that moves picks an open frame at random every tenth of a second.
+		const uint frames = _banks[_selected]->frames.size();
+		if (!(_speaking && _mouthMoves) || frames < 2) {
+			if (frames >= 2)
+				playBank(_selected, now, 1, 1);
+		} else if (now - _lastMouthChange > 100) {
+			const uint frame = g_mouthRandom ? g_mouthRandom->getRandomNumberRng(1, frames - 1) : 1;
+			playBank(_selected, now, frame, frame);
+			_lastMouthChange = now;
+		}
+	}
 	_players[_selected]->update(now);
 	const Frame *frame = _players[_selected]->currentFrame();
 	if (!frame)
@@ -149,6 +232,22 @@ void SceneObject::prepareFrame(uint32 now) {
 
 bool SceneObject::sprite(const SceneView &, SceneSprite &) const {
 	return false;
+}
+
+bool SceneObject::backSprite(const SceneView &view, SceneSprite &sprite) const {
+	if (!_talkable || !showsTalk() || _players.empty() ||
+	    (flags() & (kActive | kShown)) != (kActive | kShown))
+		return false;
+	const Animation &bank = *_banks[_selected];
+	if (bank.frames.empty() || bank.frames[0].image < 0)
+		return false;
+	const Frame &frame = bank.frames[0];
+	const AnimationState &state = selectedPlayer().state();
+	sprite.image = bank.images[frame.image].get();
+	sprite.x = add(add(subtract(x(), view.x), state.movementX), 320 + int32(frame.x));
+	sprite.y = add(add(subtract(view.y, y()), -int32(frame.y)), 240 - int32(state.movementY));
+	sprite.depth = depth() + 1;
+	return true;
 }
 
 PropObject::PropObject(const SceneObjectRecord &record, const SceneGroup &group,
@@ -215,6 +314,24 @@ CharacterObject::CharacterObject(const SceneObjectRecord &record, const SceneGro
                                  const SceneData &scene, uint32 now)
 	: InteractiveObject(record, group, scene, now, 4) {
 	show(true);
+	// The text of what a character says is coloured and wrapped as its record says (the first
+	// four bytes). Its idle bank is the last one whose name starts with MIR (as in "mirar"), and
+	// the banks that show it talking are the ones that start with HAB (as in "hablar").
+	TalkConfig config;
+	config.colour = record.parameters[0] | (record.parameters[1] << 8);
+	config.width = record.parameters[2] | (record.parameters[3] << 8);
+	for (uint i = 0; i < animationCount(); ++i) {
+		if (animationName(i).hasPrefix("MIR"))
+			_idleBank = i;
+		else if (animationName(i).hasPrefix("HAB"))
+			config.banks.push_back(i);
+	}
+	setTalkConfig(config);
+}
+
+void CharacterObject::turn(int direction, uint32 now) {
+	if (!play(_idleBank, now, direction - 1, direction - 1, false))
+		error("Tesoro: A character cannot face direction %d.", direction);
 }
 
 FloorObject::FloorObject(const SceneObjectRecord &record, const SceneGroup &group,
@@ -431,6 +548,8 @@ void Scene::appendSprites(uint32 now, Common::Array<SceneSprite> &sprites) {
 				continue;
 			object.prepareFrame(now);
 			SceneSprite sprite;
+			if (object.backSprite(view, sprite))
+				sprites.push_back(sprite);
 			if (object.sprite(view, sprite))
 				sprites.push_back(sprite);
 		}

@@ -43,6 +43,7 @@ public:
 
 	// Changes jim's direction
 	void look(ScriptOp::Direction direction, uint32 now);
+	void turn(int direction, uint32 now) override { look(ScriptOp::Direction(direction), now); }
 
 	// Walks in a straight line to a point. The waiter, if any, is resumed on arrival or immediately if the room has no floor.
 	void startWalk(int32 x, int32 y, Script *waiter, uint32 now);
@@ -59,6 +60,13 @@ public:
 	void commitPosition();
 
 	bool sprite(const SceneView &view, SceneSprite &sprite) const override;
+	bool backSprite(const SceneView &view, SceneSprite &sprite) const override;
+	void speechAnchor(const SceneView &view, int32 &outX, int32 &outY) const override;
+
+protected:
+	void selectTalkBank(uint32 now) override;
+	// While he walks, or has just arrived and not yet turned, he shows his walking bank.
+	bool showsTalk() const override { return SceneObject::showsTalk() && !_walkFlag; }
 
 private:
 	int floorScale() const;
@@ -68,6 +76,7 @@ private:
 	ScriptOp::Direction _direction = ScriptOp::kLeft;
 
 	bool _walking = false;
+	bool _walkFlag = false; // set when a walk begins and cleared when he turns
 	Script *_waiter = nullptr;
 	int32 _fixedX = 0, _fixedY = 0;
 	int32 _targetX = 0, _targetY = 0;

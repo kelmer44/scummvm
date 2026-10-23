@@ -82,6 +82,9 @@ private:
 	Audio::SoundHandle _speech, _effect;
 	Common::String _subtitle;
 	bool _speaking = false, _speechMuted = false, _speechSkipped = false;
+	// Who is talking. The narrator is Jim, with his mouth closed and the text on the middle of the screen.
+	SceneObject *_talker = nullptr;
+	bool _narration = false;
 	uint32 _speechUntil = 0;
 
 	// Loads a scene by file name the first time it is asked for.

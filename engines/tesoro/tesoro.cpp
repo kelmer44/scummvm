@@ -101,6 +101,7 @@ void TesoroEngine::init() {
 	_mainMenu = readMenu(_archive.read("PRINCIPAL.LVL"));
 	_newGameMenu = readMenu(_archive.read("NUEVO.LVL"));
 	_library.load(_archive);
+	SceneObject::setRandomSource(&_randomSource);
 	Common::Array<Common::SharedPtr<Animation>> jimBanks;
 	for (uint i = 0; i < JimObject::bankCount(); ++i)
 		jimBanks.push_back(Common::SharedPtr<Animation>(new Animation(readAnimation(_archive.read(JimObject::bankName(i))))));
@@ -273,8 +274,16 @@ void TesoroEngine::draw() {
 		Common::Array<SceneSprite> sprites;
 		_currentScene->appendSprites(_gameTime, sprites);
 		_renderer.draw(*_screen->surfacePtr(), sprites);
-		if (!_subtitle.empty() && _font && (ConfMan.getBool("subtitles") || ConfMan.getBool("speech_mute")))
-			_renderer.drawNarration(*_screen->surfacePtr(), *_font, _subtitle, 0x001f);
+		if (_speaking && _talker && _font && (ConfMan.getBool("subtitles") || ConfMan.getBool("speech_mute"))) {
+			if (_narration) {
+				_renderer.drawNarration(*_screen->surfacePtr(), *_font, _subtitle, _talker->narrationColour());
+			} else {
+				// What a character says is centred above its head.
+				int32 x, y;
+				_talker->speechAnchor(_currentScene->camera().groupView(_talker->parallax()), x, y);
+				_renderer.drawText(*_screen->surfacePtr(), *_font, _subtitle, _talker->speechColour(), x, y, _talker->speechWidth());
+			}
+		}
 	}
 	else if (_state != kStartupMovie && _state != kNewGameMovie && _state != kAdventureMovie) {
 		const Image *background = _state == kMainMenu ? _mainMenu.background.get() : _newGameMenu.background.get();
@@ -354,6 +363,7 @@ void TesoroEngine::stopAdventure() {
 	_mixer->stopHandle(_effect);
 	_speaking = false;
 	_subtitle.clear();
+	_talker = nullptr;
 	_currentScene.reset();
 	_scenes.clear();
 }
@@ -377,6 +387,9 @@ void TesoroEngine::updateSpeech() {
 	if (done) {
 		_speaking = false;
 		_subtitle.clear();
+		if (_talker)
+			_talker->endSpeech();
+		_talker = nullptr;
 	}
 }
 
@@ -410,11 +423,15 @@ void TesoroEngine::startScript(const ScriptBlock &block, uint64 labelId, uint8 *
 }
 
 void TesoroEngine::startSpeech(SceneObject *speaker, const TextEntry &text, int option) {
-	if (speaker)
-		error("Tesoro: Character speech is not implemented (%s).", text.name.c_str());
-	// The narrator: the text is centred on the screen and read from the speech file.
+	// The narrator is Jim, who does not move his mouth.
+	SceneObject *talker = speaker ? speaker : _jim.get();
+	if (!talker->canTalk())
+		error("Tesoro: %s cannot talk.", text.name.c_str());
 	_mixer->stopHandle(_speech);
 	Audio::SeekableAudioStream *audio = openWav(text.name + ".WAV");
+	talker->beginSpeech(_gameTime, speaker != nullptr);
+	_talker = talker;
+	_narration = speaker == nullptr;
 	_subtitle = text.text;
 	_speaking = true;
 	_speechSkipped = false;
@@ -427,9 +444,7 @@ void TesoroEngine::startSpeech(SceneObject *speaker, const TextEntry &text, int 
 }
 
 bool TesoroEngine::isSpeaking(SceneObject *speaker) const {
-	if (speaker)
-		error("Tesoro: Character speech is not implemented.");
-	return _speaking;
+	return (speaker ? speaker : _jim.get())->isSpeaking();
 }
 
 int TesoroEngine::pickDialogueChoice(const Common::Array<const TextEntry *> &choices) {
@@ -506,9 +521,7 @@ void TesoroEngine::walk(SceneObject &object, int x, int y, Script &waiter) {
 }
 
 void TesoroEngine::look(SceneObject &object, ScriptOp::Direction direction) {
-	if (&object != _jim.get())
-		error("Tesoro: Only Jim can turn so far.");
-	_jim->look(direction, _gameTime);
+	object.turn(direction, _gameTime);
 }
 
 void TesoroEngine::pauseEngineIntern(bool pause) {

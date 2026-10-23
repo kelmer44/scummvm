@@ -22,6 +22,7 @@
 #ifndef TESORO_SCENE_H
 #define TESORO_SCENE_H
 
+#include "common/random.h"
 #include "tesoro/animation.h"
 #include "tesoro/resources.h"
 
@@ -80,6 +81,9 @@ public:
 	virtual void prepareFrame(uint32 now);
 	// Fills in the sprite this object submits for the frame; false when it draws nothing.
 	virtual bool sprite(const SceneView &view, SceneSprite &sprite) const;
+	// While an object talks, the first frame of its talking bank is its body, drawn just behind
+	// the current frame (the mouth). This is the body's sprite; false when there is none.
+	virtual bool backSprite(const SceneView &view, SceneSprite &sprite) const;
 
 	const AnimationState &animationState() const { assert(!_players.empty()); return _players[_selected]->state(); }
 	uint32 flags() const { return _flags; }
@@ -92,6 +96,33 @@ public:
 	int32 parallax() const { return _parallax; }
 	void setParallax(int32 parallax) { _parallax = parallax; }
 	const SceneBounds &hitBounds() const { return _hitBounds; }
+	// What an object needs to speak: the colour and width of its text, and the banks that
+	// show it talking (the first frame of each is a closed mouth).
+	struct TalkConfig {
+		uint16 colour = 0;
+		uint16 width = 0;
+		uint16 narrationColour = 0;
+		Common::Array<uint> banks;
+	};
+	bool canTalk() const { return _talkable; }
+	uint16 speechColour() const { return _talk.colour; }
+	uint16 speechWidth() const { return _talk.width; }
+	uint16 narrationColour() const { return _talk.narrationColour; }
+	// Starts talking: the object keeps the animation it had, shows its talking bank, and moves
+	// its mouth if mouthMoves. It goes on showing the closed mouth until restoreAnimation.
+	void beginSpeech(uint32 now, bool mouthMoves);
+	void endSpeech() { _speaking = false; }
+	bool isSpeaking() const { return _speaking; }
+	// Puts back the animation that the object had before it talked.
+	void restoreAnimation(uint32 now);
+	bool hasSavedAnimation() const { return _animationSaved; }
+	// Where the text of what the object says is centred on the screen, for a view of its group.
+	virtual void speechAnchor(const SceneView &view, int32 &outX, int32 &outY) const;
+	// Turns the object to face a direction (1 up, 2 down, 3 left, 4 right).
+	virtual void turn(int direction, uint32 now);
+	// A source of random numbers for the objects' mouths.
+	static void setRandomSource(Common::RandomSource *random);
+
 	// True while the selected bank is still playing an animation.
 	bool isPlaying() const { return !_players.empty() && (_players[_selected]->state().flags & AnimationPlayer::kPlaying); }
 
@@ -102,6 +133,16 @@ protected:
 	            int32 x, int32 y, uint16 depth);
 
 	void addFlags(uint32 flags) { _flags |= flags; }
+	uint animationCount() const { return _banks.size(); }
+	const Common::String &animationName(uint bank) const { return _banks[bank]->name; }
+	const TalkConfig &talkConfig() const { return _talk; }
+	void setTalkConfig(const TalkConfig &config) { _talk = config; _talkable = true; }
+	// Selects the bank that shows the object talking; the choice is up to the object.
+	virtual void selectTalkBank(uint32 now);
+	// Plays a bank without forgetting the animation that was saved (play does).
+	void playBank(uint bank, uint32 now, uint16 first, int last, bool loop = false);
+	// Whether the object shows itself talking on this frame.
+	virtual bool showsTalk() const { return _animationSaved; }
 	// Where the current frame is drawn, shared by every object that shows its animation.
 	bool frameSprite(const SceneView &view, SceneSprite &sprite) const;
 	const AnimationPlayer &selectedPlayer() const { assert(!_players.empty()); return *_players[_selected]; }
@@ -119,6 +160,12 @@ private:
 	uint32 _kind;
 	uint64 _nameId;
 	uint32 _flags = kActive | kHasAnimation;
+	TalkConfig _talk;
+	bool _talkable = false;
+	bool _speaking = false, _mouthMoves = false;
+	bool _animationSaved = false; // the object is showing a talking bank
+	uint _savedBank = 0;
+	uint32 _savedFlags = 0, _lastMouthChange = 0;
 	int32 _x, _y;
 	uint16 _depth;
 	int32 _parallax = 300;
@@ -157,6 +204,12 @@ public:
 class CharacterObject : public InteractiveObject {
 public:
 	CharacterObject(const SceneObjectRecord &record, const SceneGroup &group, const SceneData &scene, uint32 now);
+
+	// A character stands facing a direction in its idle bank, which has a frame for each.
+	void turn(int direction, uint32 now) override;
+
+private:
+	uint _idleBank = 0;
 };
 
 // Kind 7: the walkable ground of a room. It is not drawn; its outline gives the scale of
