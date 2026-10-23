@@ -67,7 +67,7 @@ struct SceneSprite {
 // Base of every object a scene owns, whatever its kind.
 class SceneObject {
 public:
-	enum Flags { kActive = 2, kShown = 4, kHasAnimation = 16 };
+	enum Flags { kActive = 2, kShown = 4, kHasAnimation = 16, kGrouped = 0x100 };
 	virtual ~SceneObject() {}
 
 	void setActive(bool active);
@@ -92,6 +92,9 @@ public:
 protected:
 	SceneObject(const SceneObjectRecord &record, const SceneGroup &group, const SceneData &scene);
 
+	void addFlags(uint32 flags) { _flags |= flags; }
+	// Where the current frame is drawn, shared by every object that shows its animation.
+	bool frameSprite(const SceneView &view, SceneSprite &sprite) const;
 	const AnimationPlayer &selectedPlayer() const { assert(!_players.empty()); return *_players[_selected]; }
 	int32 y() const { return _y; }
 
@@ -129,6 +132,19 @@ struct SceneMessage {
 	uint bank = 0;               // kPlay
 	uint16 first = 0;            // kPlay
 	PlayMode mode = kPlayOnce;   // kPlay
+};
+
+// Kinds 6, 9, 12, 13, 17 and 20: objects the player can interact with.
+class InteractiveObject : public SceneObject {
+public:
+	InteractiveObject(const SceneObjectRecord &record, const SceneGroup &group, const SceneData &scene, uint32 now, uint parameterOffset = 0);
+	bool sprite(const SceneView &view, SceneSprite &sprite) const override;
+};
+
+// Kind 5: the characters of the game.
+class CharacterObject : public InteractiveObject {
+public:
+	CharacterObject(const SceneObjectRecord &record, const SceneGroup &group, const SceneData &scene, uint32 now);
 };
 
 // A loaded scene owns every object in its LVL. Kinds without a SceneObject subclass

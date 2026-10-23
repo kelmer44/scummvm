@@ -152,6 +152,7 @@ PropObject::PropObject(const SceneObjectRecord &record, const SceneGroup &group,
 	for (uint i = 0; i < record.bankIndices.size(); ++i)
 		if (scene.banks[record.bankIndices[i]]->isFont)
 			error("Tesoro: Invalid prop bank for %s.", record.name.c_str());
+	addFlags(kGrouped);
 	show(!scene.banks[record.bankIndices[0]]->images.empty());
 	uint first = record.parameters[0], mode = record.parameters[1];
 	if (mode <= 3) {
@@ -167,7 +168,9 @@ PropObject::PropObject(const SceneObjectRecord &record, const SceneGroup &group,
 	}
 }
 
-bool PropObject::sprite(const SceneView &view, SceneSprite &sprite) const {
+bool SceneObject::frameSprite(const SceneView &view, SceneSprite &sprite) const {
+	if (_players.empty())
+		return false;
 	const AnimationPlayer &player = selectedPlayer();
 	const Frame *frame = player.currentFrame();
 	if ((flags() & (kActive | kShown)) != (kActive | kShown) || !frame || !player.currentImage())
@@ -177,6 +180,34 @@ bool PropObject::sprite(const SceneView &view, SceneSprite &sprite) const {
 	sprite.y = add(add(subtract(view.y, y()), -int32(frame->y)), 240 - int32(player.state().movementY));
 	sprite.depth = depth();
 	return true;
+}
+
+bool PropObject::sprite(const SceneView &view, SceneSprite &sprite) const {
+	return frameSprite(view, sprite);
+}
+
+InteractiveObject::InteractiveObject(const SceneObjectRecord &record, const SceneGroup &group, const SceneData &scene, uint32 now, uint parameterOffset)
+	: SceneObject(record, group, scene) {
+	if (record.parameters.size() <= parameterOffset)
+		error("Tesoro: Invalid interactive object %s.", record.name.c_str());
+	if (!record.bankIndices.empty()) {
+		// shown when its first frame has an image
+		show(selectedPlayer().currentImage() != nullptr);
+		const uint first = record.parameters[parameterOffset];
+		if (!play(0, now, first, int(first), false))
+			error("Tesoro: Invalid initial animation for %s.", record.name.c_str());
+	}
+	addFlags(kGrouped);
+}
+
+bool InteractiveObject::sprite(const SceneView &view, SceneSprite &sprite) const {
+	return frameSprite(view, sprite);
+}
+
+CharacterObject::CharacterObject(const SceneObjectRecord &record, const SceneGroup &group,
+                                 const SceneData &scene, uint32 now)
+	: InteractiveObject(record, group, scene, now, 4) {
+	show(true);
 }
 
 // Stands in for a kind that has no SceneObject subclass yet: it keeps the object
@@ -189,18 +220,36 @@ public:
 
 SceneObject *Scene::createObject(const SceneObjectRecord &record, const SceneGroup &group,
                                  const SceneData &scene, uint32 now) {
+	const char *limits = nullptr;
+	SceneObject *object = nullptr;
 	switch (record.kind) {
 	case 3:
 		return new PropObject(record, group, scene, now);
+	case 5: // characters
+		object = new CharacterObject(record, group, scene, now);
+		limits = "it is drawn, but its behaviour is not implemented";
+		break;
+	case 6: // interactive objects
+	case 9:
+	case 12:
+	case 13:
+	case 17:
+	case 20:
+		object = new InteractiveObject(record, group, scene, now);
+		limits = "it is drawn, but its behaviour is not implemented";
+		break;
 	default:
-		if (record.kind >= 32 || !(_warnedKinds & (1u << record.kind))) {
-			warning("Tesoro: object kind %u (first seen: %s) is not implemented; it is kept but inert.",
-			        record.kind, record.name.c_str());
-			if (record.kind < 32)
-				_warnedKinds |= 1u << record.kind;
-		}
-		return new UnportedObject(record, group, scene);
+		object = new UnportedObject(record, group, scene);
+		limits = "it is kept but inert";
+		break;
 	}
+	if (record.kind >= 32 || !(_warnedKinds & (1u << record.kind))) {
+		warning("Tesoro: object kind %u (first seen: %s) is not implemented; %s.",
+		        record.kind, record.name.c_str(), limits);
+		if (record.kind < 32)
+			_warnedKinds |= 1u << record.kind;
+	}
+	return object;
 }
 
 Scene::Scene(const SceneData &scene, uint32 now) {
@@ -212,9 +261,7 @@ Scene::Scene(const SceneData &scene, uint32 now) {
 			const SceneObjectRecord &record = source.objects[j];
 			Common::SharedPtr<SceneObject> object(createObject(record, source, scene, now));
 			_objects.push_back(object);
-			// Only scenery is known to join its group's draw list; where the other
-			// kinds are inserted still has to be recovered.
-			if (record.kind != 3)
+			if (!(object->flags() & SceneObject::kGrouped))
 				continue;
 			uint at = 0;
 			while (at < group.objects.size() && group.objects[at]->x() >= record.x)

@@ -82,6 +82,8 @@ void TesoroEngine::startScene(const Common::String &name) {
 }
 
 void TesoroEngine::init() {
+	// The game always shows the text of what is said; the option can still turn it off.
+	ConfMan.registerDefault("subtitles", true);
 	_archive.open();
 	_mainMenu = readMenu(_archive.read("PRINCIPAL.LVL"));
 	_newGameMenu = readMenu(_archive.read("NUEVO.LVL"));
