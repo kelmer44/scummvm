@@ -111,6 +111,13 @@ SceneObject::SceneObject(const SceneObjectRecord &record, const SceneGroup &grou
 	}
 }
 
+SceneObject::SceneObject(uint32 kind, uint64 nameId, const Common::Array<Common::SharedPtr<Animation>> &banks,
+                         int32 x, int32 y, uint16 depth)
+	: _banks(banks), _kind(kind), _nameId(nameId), _x(x), _y(y), _depth(depth) {
+	for (uint i = 0; i < _banks.size(); ++i)
+		_players.push_back(Common::SharedPtr<AnimationPlayer>(new AnimationPlayer(*_banks[i])));
+}
+
 void SceneObject::setActive(bool active) {
 	_flags = (_flags & ~uint32(kActive)) | (active ? kActive : 0);
 }
@@ -335,6 +342,33 @@ Scene::Scene(const SceneData &scene, uint32 now) {
 		const SceneObject *floor = find(name);
 		if (floor && floor->kind() == 7)
 			_floor = static_cast<const FloorObject *>(floor);
+	}
+}
+
+void Scene::addObject(const Common::SharedPtr<SceneObject> &object, uint group) {
+	if (group >= _groups.size())
+		error("Tesoro: The scene has no group %u.", group);
+	_objects.push_back(object);
+	Common::Array<Common::SharedPtr<SceneObject>> &list = _groups[group].objects;
+	uint at = 0;
+	while (at < list.size() && list[at]->x() >= object->x())
+		++at;
+	list.insert_at(at, object);
+}
+
+void Scene::removeObject(SceneObject *object) {
+	for (uint i = 0; i < _objects.size(); ++i)
+		if (_objects[i].get() == object) {
+			_objects.remove_at(i);
+			break;
+		}
+	for (uint g = 0; g < _groups.size(); ++g) {
+		Common::Array<Common::SharedPtr<SceneObject>> &list = _groups[g].objects;
+		for (uint i = 0; i < list.size(); ++i)
+			if (list[i].get() == object) {
+				list.remove_at(i);
+				break;
+			}
 	}
 }
 

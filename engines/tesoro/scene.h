@@ -94,11 +94,17 @@ public:
 
 protected:
 	SceneObject(const SceneObjectRecord &record, const SceneGroup &group, const SceneData &scene);
+	// For an object that does not come from a scene file.
+	SceneObject(uint32 kind, uint64 nameId, const Common::Array<Common::SharedPtr<Animation>> &banks,
+	            int32 x, int32 y, uint16 depth);
 
 	void addFlags(uint32 flags) { _flags |= flags; }
 	// Where the current frame is drawn, shared by every object that shows its animation.
 	bool frameSprite(const SceneView &view, SceneSprite &sprite) const;
 	const AnimationPlayer &selectedPlayer() const { assert(!_players.empty()); return *_players[_selected]; }
+	AnimationPlayer &selectedPlayer() { assert(!_players.empty()); return *_players[_selected]; }
+	uint selectedBank() const { return _selected; }
+	void moveTo(int32 x, int32 y) { _x = x; _y = y; }
 
 private:
 	SceneObject(const SceneObject &) = delete;
@@ -175,6 +181,10 @@ public:
 	// wait for its animation to finish (kPlayAndWait), otherwise nullptr.
 	SceneObject *send(uint32 now, const Common::String &target, const SceneMessage &message);
 	SceneObject *send(uint32 now, uint64 target, const SceneMessage &message);
+
+	// Adds an object that does not come from the scene file, such as Jim, to a group.
+	void addObject(const Common::SharedPtr<SceneObject> &object, uint group);
+	void removeObject(SceneObject *object);
 
 	// The floor that the room names, if it has one.
 	const FloorObject *floor() const { return _floor; }

@@ -4,6 +4,7 @@ MODULE_OBJS = \
 	tesoro.o \
 	animation.o \
 	console.o \
+	jim.o \
 	metaengine.o \
 	renderer.o \
 	resources.o \
