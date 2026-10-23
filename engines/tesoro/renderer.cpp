@@ -154,14 +154,26 @@ void SceneRenderer::drawScaled(Graphics::Surface &surface, const SceneSprite &sp
 
 void SceneRenderer::drawNarration(Graphics::Surface &surface, const Animation &font,
                                  const Common::String &text, uint16 colour) {
+	drawText(surface, font, text, colour, 320, 240, 640);
+}
+
+void SceneRenderer::drawText(Graphics::Surface &surface, const Animation &font, const Common::String &text,
+                             uint16 colour, int centreX, int y, int maxWidth, int lineHeight) {
 	if (!font.isFont || font.frames.size() <= 94)
-		error("Tesoro: Invalid subtitle font.");
+		error("Tesoro: Invalid font.");
 	const Frame &space = font.frames[94];
-	int margin = int16(space.hitW) + 2;
-	int maxWidth = (320 - margin) * 2;
-	int lineHeight = int16(space.hitH) * 3 / 2;
-	if (margin <= 0 || maxWidth <= 0 || lineHeight <= 0)
-		error("Tesoro: Invalid subtitle metrics.");
+	const int margin = int16(space.hitW) + 2;
+	if (lineHeight == 0)
+		lineHeight = int16(space.hitH) * 3 / 2;
+	// A width that the screen cannot hold is the width of the screen between its margins.
+	const int screenWidth = (320 - margin) * 2;
+	if (maxWidth > screenWidth) {
+		centreX = 320;
+		maxWidth = screenWidth;
+	}
+	if (margin <= 0 || screenWidth <= 0 || lineHeight <= 0)
+		error("Tesoro: Invalid font metrics.");
+	// Characters that the font has no glyph for, and spaces, are as wide as a space.
 	auto advance = [&](byte value) {
 		int glyph = int(value) - 33;
 		return glyph < 0 || uint(glyph) >= font.frames.size()
@@ -192,19 +204,24 @@ void SceneRenderer::drawNarration(Graphics::Surface &surface, const Animation &f
 			++at;
 		}
 	}
-	int y = MAX<int>(lineHeight, 240 - int(lines.size()) * lineHeight / 2);
-	if (y + int(lines.size()) * lineHeight > 480 - lineHeight)
-		y = 480 - (int(lines.size()) + 1) * lineHeight;
-	uint32 tint = 0xff000000 | ((colour >> 11) * 255 / 31 << 16)
-		| (((colour >> 5) & 63) * 255 / 63 << 8) | ((colour & 31) * 255 / 31);
+	// The block is centred on y, then kept between the first and the last line of the screen.
+	const int count = lines.size();
+	const int top = y - (count * lineHeight) / 2;
+	if (lineHeight > top)
+		y = lineHeight;
+	else if (480 - lineHeight < count * lineHeight + top)
+		y = 480 - (count + 1) * lineHeight;
+	else
+		y = top;
+	const uint32 tint = rgb565ToArgb(colour);
 	for (uint line = 0; line < lines.size(); ++line, y += lineHeight) {
 		int lineWidth = 0;
 		for (uint i = 0; i < lines[line].size(); ++i)
 			lineWidth += advance(byte(lines[line][i]));
-		int x = 320 - lineWidth / 2;
+		int x = centreX - lineWidth / 2;
 		if (x < margin)
 			x = margin;
-		else if (320 + lineWidth / 2 > 640 - margin)
+		else if (640 - margin < centreX + lineWidth / 2)
 			x = 640 - margin - lineWidth;
 		for (uint i = 0; i < lines[line].size(); ++i) {
 			int glyph = int(byte(lines[line][i])) - 33;
@@ -212,7 +229,7 @@ void SceneRenderer::drawNarration(Graphics::Surface &surface, const Animation &f
 				glyph = 94;
 			const Frame &frame = font.frames[glyph];
 			if (frame.image < 0 || uint(frame.image) >= font.images.size())
-				error("Tesoro: Missing subtitle glyph.");
+				error("Tesoro: Missing glyph.");
 			const Image &image = *font.images[frame.image];
 			if (glyph != 94) {
 				int glyphY = y + space.y - frame.y;
