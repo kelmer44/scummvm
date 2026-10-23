@@ -48,9 +48,17 @@ class Archive {
         Common::HashMap<Common::String, Entry> _entries;
 };
 
+// A run of pixels in one row of an image: `skip` empty pixels after the previous run, then `count` pixels.
+struct ImageSpan {
+    uint16 skip, count;
+};
+
 struct Image {
     uint16 w,h, kind;
     Common::Array<uint32> pixels;
+    // An image is stored in spans, where a span declares a run of pixels in a row: `skip` empty pixels after the previous run, then `count` pixels.
+    Common::Array<ImageSpan> spans;
+    Common::Array<uint32> rowStart;
 };
 
 // A corner of a floor's walkable outline, with the scale of a character standing there

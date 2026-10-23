@@ -217,6 +217,7 @@ Animation Reader::animation() {
 		im->pixels.resize(im->w * im->h);
 		Common::fill(im->pixels.begin(), im->pixels.end(), 0);
 		for (uint y = 0; y < im->h; ++y) {
+			im->rowStart.push_back(im->spans.size());
 			uint32 offset = u32(base + 16 + y * 8);
 			uint count = u16(base + 20 + y * 8), x = 0;
 			if (offset < 16 + im->h * 8U || uint64(offset) + count * 8 > pixelStart)
@@ -225,6 +226,8 @@ Animation Reader::animation() {
 				uint32 span = base + offset + s * 8, value = u32(span);
 				uint skip = u16(span + 4), len = u16(span + 6);
 				x += skip;
+				ImageSpan record = {(uint16)skip, (uint16)len};
+				im->spans.push_back(record);
 				if (x + len > im->w || (im->kind == 1 && (value < pixelStart || uint64(value) + len * 2 > size)))
 					error("Tesoro: bad image span");
 				for (uint k = 0; k < len; ++k) {
@@ -240,6 +243,7 @@ Animation Reader::animation() {
 				x += len;
 			}
 		}
+		im->rowStart.push_back(im->spans.size());
 		bank.images.push_back(im);
 		curPos = base + size;
 	}

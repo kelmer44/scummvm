@@ -34,6 +34,8 @@ public:
 	void drawNarration(Graphics::Surface &surface, const Animation &font, const Common::String &text, uint16 colour);
 
 private:
+	void drawScaled(Graphics::Surface &surface, const SceneSprite &sprite);
+
 	Common::Array<uint32> _depth;
 };
 

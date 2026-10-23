@@ -33,6 +33,8 @@ void SceneRenderer::draw(Graphics::Surface &surface, const Common::Array<SceneSp
 	Common::fill(_depth.begin(), _depth.end(), 0x10000U); // initialize depth buffer with maximum depth value
 	for (uint i = 0; i < sprites.size(); ++i) {
 		const SceneSprite &sprite = sprites[i];
+		if (sprite.scale)
+			continue; // scaled sprites are composed after the others
 		const Image &image = *sprite.image;
 		if (image.kind == 2)
 			error("Tesoro: Shadow composition is not implemented.");
@@ -46,6 +48,78 @@ void SceneRenderer::draw(Graphics::Surface &surface, const Common::Array<SceneSp
 				uint index = y * 640 + x;
 				if (colour && sprite.depth < _depth[index]) {
 					row[x] = colour;
+					_depth[index] = sprite.depth;
+				}
+			}
+		}
+	}
+	// Scaled sprites are drawn from the farthest to the nearest.
+	Common::Array<const SceneSprite *> scaled;
+	for (uint i = 0; i < sprites.size(); ++i) {
+		if (!sprites[i].scale)
+			continue;
+		uint at = scaled.size();
+		while (at > 0 && scaled[at - 1]->depth < sprites[i].depth)
+			--at;
+		scaled.insert_at(at, &sprites[i]);
+	}
+	for (uint i = 0; i < scaled.size(); ++i)
+		drawScaled(surface, *scaled[i]);
+}
+
+// Draws an image at a scale by picking source pixels in 16.16 fixed point: the rows by the
+// vertical step, and each run of pixels of a row from where it starts and ends when scaled.
+void SceneRenderer::drawScaled(Graphics::Surface &surface, const SceneSprite &sprite) {
+	const Image &image = *sprite.image;
+	if (image.kind != 1)
+		error("Tesoro: Only literal images can be scaled so far.");
+	const uint32 scaleX = uint32(sprite.scale) << 8, scaleY = scaleX;
+	const int32 x = sprite.x;
+	int32 top = sprite.y;
+	int32 bottom = (int32((image.h - 1) * scaleY) >> 16) + top;
+	const int32 right = (int32((image.w - 1) * scaleX) >> 16) + x;
+	const uint32 rowStep = 0xffffffffU / scaleY;
+	int32 rowPosition = 0;
+	if (top < 0) {
+		rowPosition = int32(int64(rowStep) * -int64(top));
+		top = 0;
+	}
+	if (bottom > 479)
+		bottom = 479;
+	if (x >= 640 || right < 0 || top >= 480 || bottom < 0)
+		return;
+
+	const uint32 inverse = 0x1000000U / (scaleX >> 8);
+	const int32 rows = bottom - top + 1;
+	for (int32 r = 0; r < rows; ++r) {
+		const int32 sourceRow = rowPosition >> 16;
+		rowPosition += rowStep;
+		if (sourceRow < 0 || sourceRow >= image.h)
+			continue;
+		uint32 *row = (uint32 *)surface.getBasePtr(0, top + r);
+		const uint32 *pixels = &image.pixels[sourceRow * image.w];
+		int32 consumed = 0;
+		for (uint s = image.rowStart[sourceRow]; s < image.rowStart[sourceRow + 1]; ++s) {
+			const ImageSpan &span = image.spans[s];
+			const int32 sourceStart = consumed + span.skip;
+			const uint32 startFixed = uint32(sourceStart) * scaleX;
+			consumed = sourceStart + span.count;
+			int32 first = (int32(startFixed) >> 16) + x;
+			const int32 last = ((consumed * int32(scaleX) - 0x7fff) >> 16) + x;
+			// The first pixel starts part way into a source pixel.
+			uint32 position = -((startFixed >> 8 & 0xff) * (inverse >> 8));
+			if (position != 0) {
+				++first;
+				position += inverse;
+			}
+			for (int32 dx = first; dx <= last; ++dx, position += inverse) {
+				if (dx < 0 || dx >= 640)
+					continue;
+				const uint32 offset = MIN<uint32>(position >> 16, span.count - 1);
+				const uint32 colour = pixels[sourceStart + offset];
+				const uint index = (top + r) * 640 + dx;
+				if (colour && sprite.depth < _depth[index]) {
+					row[dx] = colour;
 					_depth[index] = sprite.depth;
 				}
 			}

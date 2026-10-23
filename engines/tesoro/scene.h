@@ -62,6 +62,8 @@ struct SceneSprite {
 	const Image *image = nullptr;
 	int32 x = 0, y = 0;
 	uint16 depth = 0;
+	// 0 draws the image as it is; otherwise its scale in 256ths (256 is full size).
+	int32 scale = 0;
 };
 
 // Base of every object a scene owns, whatever its kind.
