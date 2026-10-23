@@ -64,14 +64,14 @@ Common::String TesoroEngine::getGameId() const {
 
 void TesoroEngine::startScene(const Common::String &name) {
 	_scripts.clear();
+	_jim->leave();
 	_currentScene.reset();
 	_scene = readScene(_archive.read(name));
 
-	RoomEntry entry;
-	if(!findRoomEntry(_scene, entry))
+	if (!findRoomEntry(_scene, _roomEntry))
 		error("Tesoro: Failed to find room entry.");
-	_camera.setBounds(entry.bounds);
-	_camera.setPosition(entry.x, entry.y);
+	_camera.setBounds(_roomEntry.bounds);
+	_camera.setPosition(_roomEntry.x, _roomEntry.y);
 
 	_gameTime = 0;
 	_lastHostTime = _system->getMillis();
@@ -88,6 +88,10 @@ void TesoroEngine::init() {
 	_mainMenu = readMenu(_archive.read("PRINCIPAL.LVL"));
 	_newGameMenu = readMenu(_archive.read("NUEVO.LVL"));
 	_library.load(_archive);
+	Common::Array<Common::SharedPtr<Animation>> jimBanks;
+	for (uint i = 0; i < JimObject::bankCount(); ++i)
+		jimBanks.push_back(Common::SharedPtr<Animation>(new Animation(readAnimation(_archive.read(JimObject::bankName(i))))));
+	_jim.reset(new JimObject(jimBanks));
 	_font.reset(new Animation(readAnimation(_archive.read("FUENTES.ANM"))));
 	// Temporary pointer until the original interface cursor is ported.
 	uint32 cursor[12 * 18] = {};
@@ -99,7 +103,6 @@ void TesoroEngine::init() {
 	_state = kMainMenu;
 	startMovie(0, kStartupMovie);
 	CursorMan.showMouse(_state == kMainMenu);
-	if (ConfMan.hasKey("tesoro_test_adventure")) startAdventure(); // LOCAL-TEST-HOOK
 }
 
 bool TesoroEngine::startMovie(uint number, State state) {
@@ -298,7 +301,10 @@ void TesoroEngine::update() {
 		}
 	}
 	else if (_state == kAdventure) {
+		if (_jim->isWalking())
+			_jim->update(_gameTime);
 		updateSpeech();
+		_jim->commitPosition();
 		updateScripts();
 	}
 	else if (_state == kCensorship && int32(_system->getMillis() - _deadline) >= 0) {
@@ -312,6 +318,11 @@ void TesoroEngine::startAdventure() {
 	memset(_variables, 0, sizeof(_variables));
 	_inputEnabled = true;
 	startScene("PUERTO.LVL");
+	// The game puts Jim at the floor's origin, active and shown, before the script starts.
+	_currentScene->addObject(_jim, 0);
+	_jim->place(*_currentScene, _roomEntry.x, _roomEntry.y, _gameTime);
+	_jim->setActive(true);
+	_jim->show(true);
 	const ScriptBlock *block = _library.find("FANPRESENT");
 	if (!block)
 		error("Tesoro: The introduction script is missing.");
@@ -320,6 +331,7 @@ void TesoroEngine::startAdventure() {
 
 void TesoroEngine::stopAdventure() {
 	_scripts.clear();
+	_jim->leave();
 	_mixer->stopHandle(_speech);
 	_mixer->stopHandle(_effect);
 	_speaking = false;
@@ -413,10 +425,17 @@ void TesoroEngine::playMusic(uint track) {
 void TesoroEngine::doNative(uint scriptType, uint ordinal) {
 	if (scriptType == 1) {
 		switch (ordinal) {
-		case 0: // Jim is hidden and activated; he does not exist yet.
+		case 0: // Jim is hidden and activated, and the view goes to him.
+			_jim->show(false);
+			_jim->setActive(true);
+			_camera.setPosition(_jim->x(), _jim->y());
+			return;
 		case 1:
 		case 2:
 		case 6: // These have no effect in the original.
+			return;
+		case 4:
+			_jim->show(true);
 			return;
 		case 3: {
 			SceneMessage show;
@@ -437,11 +456,15 @@ void TesoroEngine::doNative(uint scriptType, uint ordinal) {
 }
 
 void TesoroEngine::walk(SceneObject &object, int x, int y, Script &waiter) {
-	error("Tesoro: Walking is not implemented.");
+	if (&object != _jim.get())
+		error("Tesoro: Only Jim can walk so far.");
+	_jim->startWalk(x, y, &waiter, _gameTime);
 }
 
 void TesoroEngine::look(SceneObject &object, ScriptOp::Direction direction) {
-	error("Tesoro: Turning a character is not implemented.");
+	if (&object != _jim.get())
+		error("Tesoro: Only Jim can turn so far.");
+	_jim->look(direction, _gameTime);
 }
 
 void TesoroEngine::pauseEngineIntern(bool pause) {

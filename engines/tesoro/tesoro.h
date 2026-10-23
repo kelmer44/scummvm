@@ -39,6 +39,7 @@
 
 #include "tesoro/detection.h"
 #include "tesoro/resources.h"
+#include "tesoro/jim.h"
 #include "tesoro/renderer.h"
 #include "tesoro/scene.h"
 #include "tesoro/scriptexec.h"
@@ -69,6 +70,8 @@ private:
 	SceneCamera _camera;
 	SceneRenderer _renderer;
 	Common::ScopedPtr<Scene> _currentScene;
+	RoomEntry _roomEntry;
+	Common::SharedPtr<JimObject> _jim;
 
 	ScriptLibrary _library;
 	Common::Array<Common::SharedPtr<Script>> _scripts;
