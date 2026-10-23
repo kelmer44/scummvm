@@ -214,8 +214,6 @@ Animation Reader::animation() {
 		uint32 pixelStart = u32(base);
 		if (!im->w || !im->h || im->w > 4096 || im->h > 4096 || im->kind < 1 || im->kind > 3 || pixelStart < 16 + im->h * 8U || pixelStart > size)
 			error("Tesoro: bad image dimensions/table");
-		im->pixels.resize(im->w * im->h);
-		Common::fill(im->pixels.begin(), im->pixels.end(), 0);
 		for (uint y = 0; y < im->h; ++y) {
 			im->rowStart.push_back(im->spans.size());
 			uint32 offset = u32(base + 16 + y * 8);
@@ -226,20 +224,15 @@ Animation Reader::animation() {
 				uint32 span = base + offset + s * 8, value = u32(span);
 				uint skip = u16(span + 4), len = u16(span + 6);
 				x += skip;
-				ImageSpan record = {(uint16)skip, (uint16)len};
-				im->spans.push_back(record);
 				if (x + len > im->w || (im->kind == 1 && (value < pixelStart || uint64(value) + len * 2 > size)))
 					error("Tesoro: bad image span");
-				for (uint k = 0; k < len; ++k) {
-					uint32 c;
-					if (im->kind == 2)
-						c = 0x80000000 | ((value & 31) * 255 / 31); // Shadow marker: renderer multiplies destination.
-					else {
-						uint16 rgb = im->kind == 1 ? u16(base + value + k * 2) : value;
-						c = 0xff000000 | (((rgb >> 11) * 255 / 31) << 16) | ((((rgb >> 5) & 63) * 255 / 63) << 8) | ((rgb & 31) * 255 / 31); // converts to rgba8888 from RGB565
-					}
-					im->pixels[y * im->w + x + k] = c;
+				ImageSpan record = {(uint16)skip, (uint16)len, value};
+				if (im->kind == 1) {
+					record.value = im->literals.size();
+					for (uint k = 0; k < len; ++k)
+						im->literals.push_back(u16(base + value + k * 2));
 				}
+				im->spans.push_back(record);
 				x += len;
 			}
 		}

@@ -23,6 +23,25 @@
 
 namespace Tesoro {
 
+void drawImage(Graphics::Surface &surface, const Image &image, int x, int y) {
+	if (image.kind == 2)
+		error("Tesoro: Shadow images cannot be drawn on their own.");
+	for (uint row = 0; row < image.h; ++row) {
+		const int targetY = y + int(row);
+		if (targetY < 0 || targetY >= surface.h)
+			continue;
+		uint32 *dest = (uint32 *)surface.getBasePtr(0, targetY);
+		int targetX = x;
+		for (uint s = image.rowStart[row]; s < image.rowStart[row + 1]; ++s) {
+			const ImageSpan &span = image.spans[s];
+			targetX += span.skip;
+			for (uint k = 0; k < span.count; ++k, ++targetX)
+				if (targetX >= 0 && targetX < surface.w)
+					dest[targetX] = rgb565ToArgb(image.pixel(span, k));
+		}
+	}
+}
+
 SceneRenderer::SceneRenderer() {
 	_depth.resize(640 * 480);
 }
@@ -38,17 +57,24 @@ void SceneRenderer::draw(Graphics::Surface &surface, const Common::Array<SceneSp
 		const Image &image = *sprite.image;
 		if (image.kind == 2)
 			error("Tesoro: Shadow composition is not implemented.");
-		int left = MAX<int32>(0, sprite.x), top = MAX<int32>(0, sprite.y);
-		int right = MIN<int64>(640, int64(sprite.x) + image.w);
-		int bottom = MIN<int64>(480, int64(sprite.y) + image.h);
+		const int top = MAX<int32>(0, sprite.y);
+		const int bottom = MIN<int64>(480, int64(sprite.y) + image.h);
 		for (int y = top; y < bottom; ++y) {
 			uint32 *row = (uint32 *)surface.getBasePtr(0, y);
-			for (int x = left; x < right; ++x) {
-				uint32 colour = image.pixels[(y - sprite.y) * image.w + x - sprite.x];
-				uint index = y * 640 + x;
-				if (colour && sprite.depth < _depth[index]) {
-					row[x] = colour;
-					_depth[index] = sprite.depth;
+			const uint imageRow = y - sprite.y;
+			int x = sprite.x;
+			// Each run of drawn pixels is expanded as it is drawn.
+			for (uint s = image.rowStart[imageRow]; s < image.rowStart[imageRow + 1]; ++s) {
+				const ImageSpan &span = image.spans[s];
+				x += span.skip;
+				for (uint k = 0; k < span.count; ++k, ++x) {
+					if (x < 0 || x >= 640)
+						continue;
+					const uint index = y * 640 + x;
+					if (sprite.depth < _depth[index]) {
+						row[x] = rgb565ToArgb(image.pixel(span, k));
+						_depth[index] = sprite.depth;
+					}
 				}
 			}
 		}
@@ -97,7 +123,6 @@ void SceneRenderer::drawScaled(Graphics::Surface &surface, const SceneSprite &sp
 		if (sourceRow < 0 || sourceRow >= image.h)
 			continue;
 		uint32 *row = (uint32 *)surface.getBasePtr(0, top + r);
-		const uint32 *pixels = &image.pixels[sourceRow * image.w];
 		int32 consumed = 0;
 		for (uint s = image.rowStart[sourceRow]; s < image.rowStart[sourceRow + 1]; ++s) {
 			const ImageSpan &span = image.spans[s];
@@ -116,10 +141,9 @@ void SceneRenderer::drawScaled(Graphics::Surface &surface, const SceneSprite &sp
 				if (dx < 0 || dx >= 640)
 					continue;
 				const uint32 offset = MIN<uint32>(position >> 16, span.count - 1);
-				const uint32 colour = pixels[sourceStart + offset];
 				const uint index = (top + r) * 640 + dx;
-				if (colour && sprite.depth < _depth[index]) {
-					row[dx] = colour;
+				if (sprite.depth < _depth[index]) {
+					row[dx] = rgb565ToArgb(image.pixel(span, offset));
 					_depth[index] = sprite.depth;
 				}
 			}
@@ -197,11 +221,13 @@ void SceneRenderer::drawNarration(Graphics::Surface &surface, const Animation &f
 					if (targetY < 0 || targetY >= surface.h)
 						continue;
 					uint32 *row = (uint32 *)surface.getBasePtr(0, targetY);
-					for (uint px = 0; px < image.w; ++px) {
-						uint32 pixel = image.pixels[py * image.w + px];
-						int targetX = x + px;
-						if (pixel && targetX >= 0 && targetX < surface.w)
-							row[targetX] = (pixel & 0xffffff) ? tint : 0xff000000;
+					int targetX = x;
+					for (uint s = image.rowStart[py]; s < image.rowStart[py + 1]; ++s) {
+						const ImageSpan &span = image.spans[s];
+						targetX += span.skip;
+						for (uint k = 0; k < span.count; ++k, ++targetX)
+							if (targetX >= 0 && targetX < surface.w)
+								row[targetX] = image.pixel(span, k) ? tint : 0xff000000;
 					}
 				}
 			}

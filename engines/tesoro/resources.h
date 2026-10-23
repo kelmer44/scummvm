@@ -48,18 +48,30 @@ class Archive {
         Common::HashMap<Common::String, Entry> _entries;
 };
 
-// A run of pixels in one row of an image: `skip` empty pixels after the previous run, then `count` pixels.
+// A run of pixels in one row of an image: `skip` empty pixels after the previous run, then
+// `count` drawn pixels. `value` depends on the kind of the image: for literal images (kind 1)
+// it is the index in Image::literals of the run's first RGB565 pixel, for solid images
+// (kind 3) the RGB565 colour of the whole run, and for shadow images (kind 2) the intensity.
 struct ImageSpan {
     uint16 skip, count;
+    uint32 value;
 };
 
+// Images are kept as the file stores them: rows of spans. Nothing is expanded until it is drawn.
 struct Image {
     uint16 w,h, kind;
-    Common::Array<uint32> pixels;
-    // An image is stored in spans, where a span declares a run of pixels in a row: `skip` empty pixels after the previous run, then `count` pixels.
     Common::Array<ImageSpan> spans;
-    Common::Array<uint32> rowStart;
+    Common::Array<uint32> rowStart; // row y owns spans[rowStart[y] .. rowStart[y + 1])
+    Common::Array<uint16> literals; // the RGB565 pixels of kind 1 images, in span order
+
+    // The RGB565 colour of the k-th pixel of a span (kinds 1 and 3).
+    uint16 pixel(const ImageSpan &span, uint k) const { return kind == 1 ? literals[span.value + k] : uint16(span.value); }
 };
+
+// Converts an RGB565 colour to the engine's screen format (opaque, RGBA8888).
+inline uint32 rgb565ToArgb(uint16 rgb) {
+    return 0xff000000 | (((rgb >> 11) * 255 / 31) << 16) | ((((rgb >> 5) & 63) * 255 / 63) << 8) | ((rgb & 31) * 255 / 31);
+}
 
 // A corner of a floor's walkable outline, with the scale of a character standing there
 // (256 is full size). Frames of type 4 hold them.

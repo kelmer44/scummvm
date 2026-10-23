@@ -264,7 +264,8 @@ void TesoroEngine::draw() {
 		const Image *background = _state == kMainMenu ? _mainMenu.background.get() : _newGameMenu.background.get();
 		if (_state == kCensorship && _newGameMenu.censorship)
 			background = _newGameMenu.censorship.get();
-		_screen->copyRectToSurface(background->pixels.data(), background->w * sizeof(uint32), 0, 0, 640, 480);
+		_screen->fillRect(Common::Rect(640, 480), 0xff000000);
+		drawImage(*_screen->surfacePtr(), *background, 0, 0);
 	}
 	_screen->makeAllDirty();
 
