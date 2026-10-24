@@ -104,7 +104,7 @@ private:
 	uint32 gameTime() const override { return _gameTime; }
 	Common::RandomSource &randomSource() override { return _randomSource; }
 	Scene *scene(ScriptOp::Scope scope, int level) override;
-	void setInputEnabled(bool enabled) override { _inputEnabled = enabled; }
+	void setInputEnabled(bool enabled) override;
 	void startScript(const ScriptBlock &block, uint64 labelId, uint8 *variables, Scene &scene) override;
 	void startSpeech(SceneObject *speaker, const TextEntry &text, int option) override;
 	bool isSpeaking(SceneObject *speaker) const override;
@@ -121,6 +121,8 @@ private:
 	bool startMovie(uint number, State state);
 	void stopMovie();
 	void handleEvent(const Common::Event &event);
+	// A left click on the ground sends Jim walking to that point.
+	void clickWalk(const Common::Point &mouse);
 	void draw();
 	void update();
 

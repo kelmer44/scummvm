@@ -28,7 +28,7 @@
 namespace Tesoro {
 
 // Draws an image as it is, at a position, with no depth test. Pixels the image does not
-// store are left alone.
+// store are left alone. E.g. menus
 void drawImage(Graphics::Surface &surface, const Image &image, int x, int y);
 
 class SceneRenderer {

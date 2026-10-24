@@ -177,6 +177,22 @@ void TesoroEngine::stopMovie() {
 	CursorMan.showMouse(_state == kMainMenu);
 }
 
+void TesoroEngine::setInputEnabled(bool enabled) {
+	_inputEnabled = enabled;
+	// The pointer shows while the player can act; scripts take the control away.
+	if (_state == kAdventure)
+		CursorMan.showMouse(enabled);
+}
+
+void TesoroEngine::clickWalk(const Common::Point &mouse) {
+	// The pointer is measured from the middle of the screen, y downwards, and limited to the screen.
+	const int32 screenX = CLIP<int32>(mouse.x - 320, -320, 319);
+	const int32 screenY = CLIP<int32>(mouse.y - 240, -240, 239);
+	const SceneView &camera = _currentScene->camera().position();
+	// Nothing in the room answers clicks yet, so every click is a click on the ground.
+	_jim->startWalk(screenX + camera.x, camera.y - screenY, nullptr, _gameTime);
+}
+
 void TesoroEngine::handleEvent(const Common::Event &event) {
 	if (event.type == Common::EVENT_QUIT || event.type == Common::EVENT_RETURN_TO_LAUNCHER) {
 		_movie.close();
@@ -192,6 +208,8 @@ void TesoroEngine::handleEvent(const Common::Event &event) {
 		           (event.type == Common::EVENT_KEYDOWN && event.kbd.keycode == Common::KEYCODE_SPACE))) {
 			_mixer->stopHandle(_speech);
 			_speechSkipped = true;
+		} else if (_inputEnabled && _currentScene && event.type == Common::EVENT_LBUTTONDOWN) {
+			clickWalk(event.mouse);
 		}
 		return;
 	}
@@ -317,7 +335,7 @@ void TesoroEngine::update() {
 		if (int32(now - _movieHoldUntil) >= 0) {
 			_movieHold = false;
 			_state = kAdventure;
-			CursorMan.showMouse(false);
+			CursorMan.showMouse(_inputEnabled);
 		}
 	} else if (_state == kStartupMovie || _state == kNewGameMovie || _state == kAdventureMovie) {
 		if (_movie.endOfVideo()) {
