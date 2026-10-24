@@ -77,6 +77,13 @@ const char *const kSceneNames[] = {
 
 } // namespace
 
+// TEMPORARY, to speed up testing: skips the splash movie, the new game movie and the censorship
+// screen. They are meant to come from the original scripts; remove this when they do.
+static const bool kSkipStartupScreens = true;
+
+// How many times faster the game clock runs in fast mode (Ctrl+F).
+static const uint kFastModeFactor = 5;
+
 Common::SharedPtr<Scene> TesoroEngine::loadScene(const Common::String &name) {
 	Common::SharedPtr<Scene> &scene = _scenes[name];
 	if (!scene)
@@ -115,7 +122,8 @@ void TesoroEngine::init() {
 	CursorMan.replaceCursor(cursor, 12, 18, 0, 0, 0, false, &_screen->format);
 
 	_state = kMainMenu;
-	startMovie(0, kStartupMovie);
+	if (!kSkipStartupScreens)
+		startMovie(0, kStartupMovie);
 	CursorMan.showMouse(_state == kMainMenu);
 }
 
@@ -198,6 +206,12 @@ void TesoroEngine::handleEvent(const Common::Event &event) {
 		_movie.close();
 		return;
 	}
+	if (event.type == Common::EVENT_KEYDOWN && event.kbd.keycode == Common::KEYCODE_f &&
+	    event.kbd.hasFlags(Common::KBD_CTRL)) {
+		_fastMode = !_fastMode;
+		_system->displayMessageOnOSD(Common::U32String(_fastMode ? "Fast mode on" : "Fast mode off"));
+		return;
+	}
 	if (_state == kAdventure) {
 		if (event.type == Common::EVENT_KEYDOWN &&
 			event.kbd.keycode == Common::KEYCODE_ESCAPE) {
@@ -240,6 +254,11 @@ void TesoroEngine::handleEvent(const Common::Event &event) {
 			continue;
 		switch (button.action) {
 		case 0:
+			if (kSkipStartupScreens) {
+				_state = kDifficultyMenu;
+				CursorMan.showMouse(true);
+				break;
+			}
 			_state = kNewGameMovie;
 			if (!startMovie(1, kNewGameMovie))
 				stopMovie();
@@ -330,7 +349,7 @@ void TesoroEngine::update() {
 	if (isPaused())
 		return;
 	if (_state == kAdventure && elapsed < 500)
-		_gameTime += elapsed;
+		_gameTime += _fastMode ? elapsed * kFastModeFactor : elapsed;
 	if (_state == kAdventureMovie && _movieHold) {
 		if (int32(now - _movieHoldUntil) >= 0) {
 			_movieHold = false;
@@ -338,7 +357,7 @@ void TesoroEngine::update() {
 			CursorMan.showMouse(_inputEnabled);
 		}
 	} else if (_state == kStartupMovie || _state == kNewGameMovie || _state == kAdventureMovie) {
-		if (_movie.endOfVideo()) {
+		if (_movie.endOfVideo() || (_fastMode && _state == kAdventureMovie)) {
 			stopMovie();
 		} else if (_movie.needsUpdate()) {
 			debug("Tesoro: decoding movie frame %u", _decodedMovieFrames);

@@ -80,6 +80,8 @@ private:
 	// The variable block the opening scripts run with; its ownership is still to be recovered.
 	uint8 _variables[256] = {};
 	bool _inputEnabled = true;
+	// Ctrl+F: the game clock runs faster. Speech with sound keeps its normal speed and ends on its audio or a click (muted lines run on the faster clock); movies of the adventure are skipped.
+	bool _fastMode = false;
 
 	Common::SharedPtr<Animation> _font;
 	Audio::SoundHandle _speech, _effect;
