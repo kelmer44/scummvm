@@ -187,7 +187,7 @@ void SceneObject::show(bool shown) {
 bool SceneObject::play(uint bank, uint32 now, uint16 first, int last, bool loop, bool cacheDuration) {
 	if (bank >= _players.size() || !_players[bank]->play(now, first, last, loop, cacheDuration))
 		return false;
-	_selected = bank;
+	_currentBank = bank;
 	// A new animation replaces the one that talking was going to put back.
 	_animationSaved = false;
 	return true;
@@ -196,7 +196,7 @@ bool SceneObject::play(uint bank, uint32 now, uint16 first, int last, bool loop,
 void SceneObject::playBank(uint bank, uint32 now, uint16 first, int last, bool loop) {
 	if (bank >= _players.size() || !_players[bank]->play(now, first, last, loop))
 		error("Tesoro: Invalid animation for an object.");
-	_selected = bank;
+	_currentBank = bank;
 }
 
 void SceneObject::turn(int, uint32) {
@@ -217,9 +217,9 @@ void SceneObject::beginSpeech(uint32 now, bool mouthMoves) {
 	if (!_animationSaved) {
 		// What it was showing is kept, frozen, until it is put back.
 		_animationSaved = true;
-		_players[_selected]->pause(now);
-		_savedBank = _selected;
-		_savedFlags = _players[_selected]->state().flags;
+		_players[_currentBank]->pause(now);
+		_savedBank = _currentBank;
+		_savedFlags = _players[_currentBank]->state().flags;
 	}
 	_lastMouthChange = now;
 	selectTalkBank(now);
@@ -229,9 +229,9 @@ void SceneObject::restoreAnimation(uint32 now) {
 	if (!_animationSaved)
 		return;
 	_animationSaved = false;
-	_selected = _savedBank;
-	_players[_selected]->restoreFlags(_savedFlags);
-	_players[_selected]->resume(now);
+	_currentBank = _savedBank;
+	_players[_currentBank]->restoreFlags(_savedFlags);
+	_players[_currentBank]->resume(now);
 }
 
 void SceneObject::speechAnchor(const SceneView &view, int32 &outX, int32 &outY) const {
@@ -259,18 +259,18 @@ void SceneObject::prepareFrame(uint32 now, Common::RandomSource &random) {
 	if (_talkable && showsTalk()) {
 		// While talking, the first frame of the talking bank is a closed mouth and the others
 		// are open ones. A mouth that moves picks an open frame at random every tenth of a second.
-		const uint frames = _banks[_selected]->frames.size();
+		const uint frames = _banks[_currentBank]->frames.size();
 		if (!(_speaking && _mouthMoves) || frames < 2) {
 			if (frames >= 2)
-				playBank(_selected, now, 1, 1);
+				playBank(_currentBank, now, 1, 1);
 		} else if (now - _lastMouthChange > 100) {
 			const uint frame = random.getRandomNumberRng(1, frames - 1);
-			playBank(_selected, now, frame, frame);
+			playBank(_currentBank, now, frame, frame);
 			_lastMouthChange = now;
 		}
 	}
-	_players[_selected]->update(now);
-	const Frame *frame = _players[_selected]->currentFrame();
+	_players[_currentBank]->update(now);
+	const Frame *frame = _players[_currentBank]->currentFrame();
 	if (!frame)
 		return;
 	_hitBounds.left = frame->hitX;
@@ -287,7 +287,7 @@ bool SceneObject::backSprite(const SceneView &view, SceneSprite &sprite) const {
 	if (!_talkable || !showsTalk() || _players.empty() ||
 	    (flags() & (kActive | kShown)) != (kActive | kShown))
 		return false;
-	const Animation &bank = *_banks[_selected];
+	const Animation &bank = *_banks[_currentBank];
 	if (bank.frames.empty() || bank.frames[0].image < 0)
 		return false;
 	const Frame &frame = bank.frames[0];

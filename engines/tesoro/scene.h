@@ -108,7 +108,7 @@ public:
 	// the current frame (the mouth). This is the body's sprite; false when there is none.
 	virtual bool backSprite(const SceneView &view, SceneSprite &sprite) const;
 
-	const AnimationState &animationState() const { assert(!_players.empty()); return _players[_selected]->state(); }
+	const AnimationState &animationState() const { assert(!_players.empty()); return _players[_currentBank]->state(); }
 	uint32 flags() const { return _flags; }
 	uint32 kind() const { return _kind; }
 	uint64 nameId() const { return _nameId; }
@@ -154,7 +154,7 @@ public:
 	// A source of random numbers for the objects' mouths.
 
 	// True while the selected bank is still playing an animation.
-	bool isPlaying() const { return !_players.empty() && (_players[_selected]->state().flags & AnimationPlayer::kPlaying); }
+	bool isPlaying() const { return !_players.empty() && (_players[_currentBank]->state().flags & AnimationPlayer::kPlaying); }
 
 protected:
 	SceneObject(const SceneObjectRecord &record, const SceneGroup &group, const SceneData &scene);
@@ -179,9 +179,9 @@ protected:
 	// Where the current frame is drawn, shared by every object that shows its animation.
 	bool frameSprite(const SceneView &view, SceneSprite &sprite) const;
 
-	const AnimationPlayer &selectedPlayer() const { assert(!_players.empty()); return *_players[_selected]; }
-	AnimationPlayer &selectedPlayer() { assert(!_players.empty()); return *_players[_selected]; }
-	uint selectedBank() const { return _selected; }
+	const AnimationPlayer &selectedPlayer() const { assert(!_players.empty()); return *_players[_currentBank]; }
+	AnimationPlayer &selectedPlayer() { assert(!_players.empty()); return *_players[_currentBank]; }
+	uint selectedBank() const { return _currentBank; }
 	void moveTo(int32 x, int32 y) { _x = x; _y = y; }
 
 private:
@@ -190,7 +190,7 @@ private:
 
 	Common::Array<Common::SharedPtr<Animation>> _banks;
 	Common::Array<Common::SharedPtr<AnimationPlayer>> _players;
-	uint _selected = 0;
+	uint _currentBank = 0;
 	uint32 _kind;
 	uint64 _nameId;
 	uint32 _flags = kActive | kHasAnimation;
