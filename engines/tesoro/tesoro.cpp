@@ -89,6 +89,7 @@ void TesoroEngine::placeJim(const Common::SharedPtr<Scene> &scene, int32 x, int3
 	scene->addObject(_jim, 0);
 	_jim->place(*scene, x, y, _gameTime);
 	scene->camera().setPosition(x, y);
+	scene->camera().setActor(_jim.get());
 	_currentScene = scene;
 	if (scene->entry().musicCue)
 		playMusic(scene->entry().musicCue);

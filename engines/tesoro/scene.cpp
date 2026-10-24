@@ -34,7 +34,17 @@ int32 subtract(int32 a, int32 b) {
 
 } // namespace
 
-bool SceneCamera::setPosition(int32 x, int32 y) {
+bool SceneCamera::setPosition(int32 x, int32 y, uint32 now, uint32 duration) {
+	if (duration) {
+		_glideDuration = duration;
+		_glideStart = now;
+		_from = _position;
+		_target.x = x;
+		_target.y = y;
+		return true;
+	}
+	_target.x = x;
+	_target.y = y;
 	_position.x = x;
 	_position.y = y;
 	bool left = _bounds.left <= add(x, -320);
@@ -52,6 +62,42 @@ bool SceneCamera::setPosition(int32 x, int32 y) {
 	return left && bottom && right && top;
 }
 
+void SceneCamera::update(uint32 now) {
+	// Once the actor gets within 75 pixels of the edge of the view, the camera moves 100 pixels
+	// towards that side over 750 ms, as long as its target stays inside the bounds.
+	if (_actor) {
+		const int32 actorX = _actor->x();
+		if (actorX < add(_target.x, -75) && add(_target.x, -320) > _bounds.left) {
+			_glideDuration = 750;
+			_glideStart = now;
+			_target.x = add(_target.x, -100);
+			_from = _position;
+		}
+		if (add(_target.x, 75) < actorX && add(_target.x, 319) < _bounds.right) {
+			_glideDuration = 750;
+			_glideStart = now;
+			_target.x = add(_target.x, 100);
+			_from = _position;
+		}
+	}
+	if (_glideDuration) {
+		const int32 elapsed = int32(now - _glideStart);
+		const int32 duration = int32(_glideDuration);
+		if (duration < elapsed) {
+			_glideDuration = 0;
+			const int32 x = _target.x, y = _target.y;
+			setPosition(x, y);
+			_target = _position;
+		} else {
+			const int32 x = add(int32(uint32(subtract(_target.x, _from.x)) * uint32(elapsed)) / duration, _from.x);
+			const int32 y = add(int32(uint32(subtract(_target.y, _from.y)) * uint32(elapsed)) / duration, _from.y);
+			const SceneView target = _target;
+			setPosition(x, y);
+			_target = target;
+		}
+	}
+}
+
 SceneView SceneCamera::groupView(int32 parallax) const {
 	if (parallax <= 0)
 		error("Tesoro: Invalid scene parallax divisor.");
@@ -61,14 +107,26 @@ SceneView SceneCamera::groupView(int32 parallax) const {
 	return view;
 }
 
-bool findRoomEntry(const SceneData &scene, RoomEntry &entry) {
+// The room record names the floor and gives the camera bounds.
+// iterates through the resource for the scene to find the room record (kind 1)
+static const SceneObjectRecord *findRoomRecord(const SceneData &scene) {
 	const SceneObjectRecord *room = nullptr;
 	for (uint i = 0; i < scene.groups.size(); ++i)
 		for (uint j = 0; j < scene.groups[i].objects.size(); ++j)
 			if (scene.groups[i].objects[j].kind == 1)
 				room = &scene.groups[i].objects[j];
+	return room;
+}
+
+/**
+ * Reads the room entry (default position, bounds, music) from the scene's room object (kind 1)
+ */
+bool findRoomEntry(const SceneData &scene, RoomEntry &entry) {
+	const SceneObjectRecord *room = findRoomRecord(scene);
+
 	if (!room || room->parameters.size() < 17 || room->bankIndices.empty())
 		return false;
+
 	uint bankIndex = room->bankIndices[0];
 	if (bankIndex >= scene.banks.size() || scene.banks[bankIndex]->frames.empty())
 		return false;
@@ -134,8 +192,7 @@ void SceneObject::setRandomSource(Common::RandomSource *random) {
 	g_mouthRandom = random;
 }
 
-bool SceneObject::play(uint bank, uint32 now, uint16 first, int last,
-                       bool loop, bool cacheDuration) {
+bool SceneObject::play(uint bank, uint32 now, uint16 first, int last, bool loop, bool cacheDuration) {
 	if (bank >= _players.size() || !_players[bank]->play(now, first, last, loop, cacheDuration))
 		return false;
 	_selected = bank;
@@ -439,15 +496,12 @@ Scene::Scene(const SceneData &scene, uint32 now) {
 	} else {
 		warning("Tesoro: A scene has no room with a floor to enter.");
 	}
-	const SceneObjectRecord *room = nullptr;
 	for (uint i = 0; i < scene.groups.size(); ++i) {
 		const SceneGroup &source = scene.groups[i];
 		Group group;
 		group.parallax = source.parallax;
 		for (uint j = 0; j < source.objects.size(); ++j) {
 			const SceneObjectRecord &record = source.objects[j];
-			if (record.kind == 1)
-				room = &record;
 			Common::SharedPtr<SceneObject> object(createObject(record, source, scene, now));
 			_objects.push_back(object);
 			object->setParallax(source.parallax);
@@ -461,6 +515,7 @@ Scene::Scene(const SceneData &scene, uint32 now) {
 		_groups.push_back(group);
 	}
 	// The room names its floor in the first twelve bytes of its record.
+	const SceneObjectRecord *room = findRoomRecord(scene);
 	if (room && room->parameters.size() >= 12 && room->parameters[0]) {
 		Common::String name;
 		for (uint i = 0; i < 12 && room->parameters[i]; ++i)
@@ -538,14 +593,17 @@ SceneObject *Scene::deliver(uint32 now, SceneObject *object, const char *name, c
 }
 
 void Scene::appendSprites(uint32 now, Common::Array<SceneSprite> &sprites) {
+	_camera.update(now);
 	for (uint i = 0; i < _groups.size(); ++i) {
 		const Group &group = _groups[i];
 		SceneView view = _camera.groupView(group.parallax);
+		// for each object in the parallax group
 		for (uint j = 0; j < group.objects.size(); ++j) {
 			SceneObject &object = *group.objects[j];
 			if ((object.flags() & (SceneObject::kActive | SceneObject::kShown)) !=
 			    (SceneObject::kActive | SceneObject::kShown))
 				continue;
+			// prepare frame
 			object.prepareFrame(now);
 			SceneSprite sprite;
 			if (object.backSprite(view, sprite))

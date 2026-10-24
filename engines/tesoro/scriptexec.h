@@ -29,8 +29,7 @@ namespace Tesoro {
 
 class Script;
 
-// What a running script needs from the rest of the game. Anything the engine cannot do
-// yet should fail visibly instead of being skipped.
+// Smaller interface with the api needed by the scripts to run things from the rest of the game.
 class ScriptHost {
 public:
 	virtual ~ScriptHost() {}
