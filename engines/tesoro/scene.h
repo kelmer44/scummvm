@@ -101,7 +101,7 @@ public:
 	bool play(uint bank, uint32 now, uint16 first = 0, int last = -1, bool loop = false, bool cacheDuration = false);
 
 	// Advances the selected bank and refreshes the hit bounds.
-	virtual void prepareFrame(uint32 now);
+	virtual void prepareFrame(uint32 now, Common::RandomSource &random);
 	// Fills in the sprite this object submits for the frame; false when it draws nothing.
 	virtual bool sprite(const SceneView &view, SceneSprite &sprite) const;
 	// While an object talks, the first frame of its talking bank is its body, drawn just behind
@@ -152,7 +152,6 @@ public:
 	virtual void turn(int direction, uint32 now);
 
 	// A source of random numbers for the objects' mouths.
-	static void setRandomSource(Common::RandomSource *random);
 
 	// True while the selected bank is still playing an animation.
 	bool isPlaying() const { return !_players.empty() && (_players[_selected]->state().flags & AnimationPlayer::kPlaying); }
@@ -272,7 +271,7 @@ public:
 	 * SceneRenderer::draw then draws the array into the screen surface, using a depth buffer
 	 * so overlapping sprites end up in the right order.
 	 */
-	void appendSprites(uint32 now, Common::Array<SceneSprite> &sprites);
+	void appendSprites(uint32 now, Common::RandomSource &random, Common::Array<SceneSprite> &sprites);
 
 	// Each scene has its own camera, which starts on the room's floor.
 	SceneCamera &camera() { return _camera; }

@@ -264,7 +264,7 @@ void Script::update() {
 	case ScriptOp::kMessage:
 		if (op.kind != ScriptOp::kPlay) // a walk waits for actionDone
 			return;
-		_animationWait->prepareFrame(_host.gameTime());
+		_animationWait->prepareFrame(_host.gameTime(), _host.randomSource());
 		if (_animationWait->isPlaying())
 			return;
 		++_pc;

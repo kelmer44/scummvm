@@ -184,14 +184,6 @@ void SceneObject::show(bool shown) {
 	_flags = (_flags & ~uint32(kShown)) | (shown ? kShown : 0);
 }
 
-namespace {
-Common::RandomSource *g_mouthRandom = nullptr;
-}
-
-void SceneObject::setRandomSource(Common::RandomSource *random) {
-	g_mouthRandom = random;
-}
-
 bool SceneObject::play(uint bank, uint32 now, uint16 first, int last, bool loop, bool cacheDuration) {
 	if (bank >= _players.size() || !_players[bank]->play(now, first, last, loop, cacheDuration))
 		return false;
@@ -261,7 +253,7 @@ void SceneObject::speechAnchor(const SceneView &view, int32 &outX, int32 &outY) 
 	outY += view.y;
 }
 
-void SceneObject::prepareFrame(uint32 now) {
+void SceneObject::prepareFrame(uint32 now, Common::RandomSource &random) {
 	if (_players.empty())
 		return;
 	if (_talkable && showsTalk()) {
@@ -272,7 +264,7 @@ void SceneObject::prepareFrame(uint32 now) {
 			if (frames >= 2)
 				playBank(_selected, now, 1, 1);
 		} else if (now - _lastMouthChange > 100) {
-			const uint frame = g_mouthRandom ? g_mouthRandom->getRandomNumberRng(1, frames - 1) : 1;
+			const uint frame = random.getRandomNumberRng(1, frames - 1);
 			playBank(_selected, now, frame, frame);
 			_lastMouthChange = now;
 		}
@@ -592,7 +584,7 @@ SceneObject *Scene::deliver(uint32 now, SceneObject *object, const char *name, c
 	return nullptr;
 }
 
-void Scene::appendSprites(uint32 now, Common::Array<SceneSprite> &sprites) {
+void Scene::appendSprites(uint32 now, Common::RandomSource &random, Common::Array<SceneSprite> &sprites) {
 	_camera.update(now);
 	for (uint i = 0; i < _groups.size(); ++i) {
 		const Group &group = _groups[i];
@@ -604,7 +596,7 @@ void Scene::appendSprites(uint32 now, Common::Array<SceneSprite> &sprites) {
 			    (SceneObject::kActive | SceneObject::kShown))
 				continue;
 			// prepare frame
-			object.prepareFrame(now);
+			object.prepareFrame(now, random);
 			SceneSprite sprite;
 			if (object.backSprite(view, sprite))
 				sprites.push_back(sprite);

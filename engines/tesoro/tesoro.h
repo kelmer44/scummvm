@@ -102,6 +102,7 @@ private:
 
 	// ScriptHost
 	uint32 gameTime() const override { return _gameTime; }
+	Common::RandomSource &randomSource() override { return _randomSource; }
 	Scene *scene(ScriptOp::Scope scope, int level) override;
 	void setInputEnabled(bool enabled) override { _inputEnabled = enabled; }
 	void startScript(const ScriptBlock &block, uint64 labelId, uint8 *variables, Scene &scene) override;

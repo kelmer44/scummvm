@@ -36,6 +36,8 @@ public:
 
 	// The scene clock, in milliseconds.
 	virtual uint32 gameTime() const = 0;
+	// The engine's random source, shared by everything that needs chance.
+	virtual Common::RandomSource &randomSource() = 0;
 	// The scene a sendmessage refers to when it names a scope; null if it is not loaded.
 	virtual Scene *scene(ScriptOp::Scope scope, int level) = 0;
 	virtual void setInputEnabled(bool enabled) = 0;

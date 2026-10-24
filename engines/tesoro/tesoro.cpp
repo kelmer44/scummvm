@@ -102,7 +102,6 @@ void TesoroEngine::init() {
 	_mainMenu = readMenu(_archive.read("PRINCIPAL.LVL"));
 	_newGameMenu = readMenu(_archive.read("NUEVO.LVL"));
 	_library.load(_archive);
-	SceneObject::setRandomSource(&_randomSource);
 	Common::Array<Common::SharedPtr<Animation>> jimBanks;
 	for (uint i = 0; i < JimObject::bankCount(); ++i)
 		jimBanks.push_back(Common::SharedPtr<Animation>(new Animation(readAnimation(_archive.read(JimObject::bankName(i))))));
@@ -279,7 +278,7 @@ Common::Error TesoroEngine::run() {
 void TesoroEngine::draw() {
 	if(_state == kAdventure && _currentScene) {
 		Common::Array<SceneSprite> sprites;
-		_currentScene->appendSprites(_gameTime, sprites);
+		_currentScene->appendSprites(_gameTime, _randomSource, sprites);
 		_renderer.draw(*_screen->surfacePtr(), sprites);
 		if (_speaking && _talker && _font && (ConfMan.getBool("subtitles") || ConfMan.getBool("speech_mute"))) {
 			if (_narration) {
