@@ -187,9 +187,7 @@ void TesoroEngine::stopMovie() {
 
 void TesoroEngine::setInputEnabled(bool enabled) {
 	_inputEnabled = enabled;
-	// The pointer shows while the player can act; scripts take the control away.
-	if (_state == kAdventure)
-		CursorMan.showMouse(enabled);
+	// The pointer (drawn by the game, see draw) shows while the player can act; scripts take the control away.
 }
 
 void TesoroEngine::clickWalk(const Common::Point &mouse) {
@@ -221,18 +219,26 @@ void TesoroEngine::turnJim(int direction) {
 	_jim->look(ScriptOp::Direction(direction), _gameTime);
 }
 
+void TesoroEngine::jimSays(const TextEntry &text) {
+	startSpeech(_jim.get(), text, 1);
+	setInputEnabled(false);
+	_inputAfterSpeech = true;
+}
+
 void TesoroEngine::clearPointer() {
 	_hovered.clear();
+	_interfaceHovered.clear();
 	_pointerText.clear();
 	_leftClick = _rightClick = false;
 }
 
-void TesoroEngine::updatePointer() {
+int TesoroEngine::reactPointer(PointerProbe &probe, Common::Array<SceneObject *> &hovered) {
 	// The objects that the probe overlapped on the last frame, nearest first, are asked in turn
 	// until one takes the pointer. One that was not hovered before is only hovered now.
-	const Common::Array<SceneObject *> &candidates = _probe->candidates();
-	Common::Array<SceneObject *> before = _hovered;
-	_hovered.clear();
+	const Common::Array<SceneObject *> &candidates = probe.candidates();
+	const int verb = _cursor ? _cursor->verb() : 0;
+	Common::Array<SceneObject *> before = hovered;
+	hovered.clear();
 	int result = 0;
 	for (uint i = 0; i < candidates.size() && result == 0; ++i) {
 		SceneObject *object = candidates[i];
@@ -240,32 +246,79 @@ void TesoroEngine::updatePointer() {
 		while (wasAt < before.size() && before[wasAt] != object)
 			++wasAt;
 		if (wasAt == before.size()) {
-			if (object->hitTest()) {
-				_hovered.push_back(object);
+			if (object->hitTest(*this)) {
+				hovered.push_back(object);
 				result = object->onHover(*this);
 			}
 		} else {
 			if (_leftClick)
-				result = object->onLeftClick(*this, 0);
+				result = object->onLeftClick(*this, verb);
 			else if (_rightClick)
-				result = object->onRightClick(*this, 0);
+				result = object->onRightClick(*this, verb);
 			else
 				result = object->onHover(*this);
 			if (result == 3)
 				break;
-			_hovered.push_back(object);
+			hovered.push_back(object);
 			before.remove_at(wasAt);
 		}
 	}
 	for (uint i = 0; i < before.size(); ++i)
 		before[i]->onUnhover(*this);
-	if (_hovered.empty())
+	return result;
+}
+
+void TesoroEngine::updatePointer() {
+	// The interface sees the pointer first.
+	int result = _interface ? reactPointer(*_interfaceProbe, _interfaceHovered) : 0;
+	bool onInterface = result != 0;
+	if (!onInterface)
+		result = reactPointer(*_probe, _hovered);
+	if (_hovered.empty() && _interfaceHovered.empty())
 		_pointerText.clear();
 
-	// A click that nothing took is a click on the ground.
-	if (_leftClick && result == 0 && _currentScene)
+	// A click that nothing took is a click on the ground, if the pointer shows the default verb.
+	if (_leftClick && result == 0 && _currentScene && (!_cursor || _cursor->verb() == 0))
 		clickWalk(_clickAt);
 	_leftClick = _rightClick = false;
+}
+
+void TesoroEngine::setVerb(int verb) {
+	if (_cursor)
+		_cursor->setVerb(verb, _gameTime);
+}
+
+void TesoroEngine::loadInterface() {
+	_interface.reset(new Scene(readScene(_archive.read("INTERFACE.LVL")), _gameTime));
+	// The interface is the size of the screen and does not scroll; the pointer is measured from its corner.
+	SceneBounds bounds;
+	bounds.left = 0;
+	bounds.bottom = 0;
+	bounds.right = 640;
+	bounds.top = 480;
+	_interface->camera().setBounds(bounds);
+	_interface->camera().setPosition(320, 240);
+	_cursor = static_cast<CursorObject *>(_interface->find("CURSOR"));
+	ControlIconObject *control = static_cast<ControlIconObject *>(_interface->find("CONTROL_ICO"));
+	if (!_cursor || _cursor->kind() != 10 || !control || control->kind() != 11)
+		error("Tesoro: The interface is missing its pointer.");
+	control->bind(*_interface);
+	_interfaceProbe.reset(new PointerProbe());
+	_interface->addObject(_interfaceProbe, 0);
+	_interfaceHovered.clear();
+}
+
+void TesoroEngine::updateInterface() {
+	if (!_interface)
+		return;
+	// The pointer in the interface's world: x to the right, y upwards, from the corner of the screen.
+	const Common::Point mouse = _eventMan->getMousePos();
+	const int32 x = CLIP<int32>(mouse.x, 0, 639), y = 479 - CLIP<int32>(mouse.y, 0, 479);
+	_cursor->setPosition(x, y);
+	_interfaceProbe->clearCandidates();
+	_interfaceProbe->placeAt(x, y);
+	_interface->objectMoved(_interfaceProbe.get());
+	_interface->resolveOverlaps(_gameTime);
 }
 
 void TesoroEngine::drawHotspots() {
@@ -435,6 +488,22 @@ void TesoroEngine::draw() {
 	if(_state == kAdventure && _currentScene) {
 		Common::Array<SceneSprite> sprites;
 		_currentScene->appendSprites(_gameTime, _randomSource, sprites);
+		if (_interface) {
+			// The interface is in front of the whole room. The shade behind the verb bar is a shadow
+			// image, which cannot be composed yet, so it is left out; the pointer is in front of the bar.
+			Common::Array<SceneSprite> interfaceSprites;
+			_interface->appendSprites(_gameTime, _randomSource, interfaceSprites);
+			for (uint i = 0; i < interfaceSprites.size(); ++i) {
+				SceneSprite &sprite = interfaceSprites[i];
+				if (sprite.image->kind == 2)
+					continue;
+				const bool pointer = sprite.image == _cursor->image();
+				if (pointer && !_inputEnabled)
+					continue;
+				sprite.depth = pointer ? 0 : 1;
+				sprites.push_back(sprite);
+			}
+		}
 		_renderer.draw(*_screen->surfacePtr(), sprites);
 		if (_showHotspots)
 			drawHotspots();
@@ -480,7 +549,6 @@ void TesoroEngine::update() {
 		if (int32(now - _movieHoldUntil) >= 0) {
 			_movieHold = false;
 			_state = kAdventure;
-			CursorMan.showMouse(_inputEnabled);
 		}
 	} else if (_state == kStartupMovie || _state == kNewGameMovie || _state == kAdventureMovie) {
 		if (_movie.endOfVideo() || (_fastMode && _state == kAdventureMovie)) {
@@ -501,10 +569,15 @@ void TesoroEngine::update() {
 		if (_jim->isWalking())
 			_jim->update(_gameTime);
 		updateSpeech();
+		if (_inputAfterSpeech && !_speaking) {
+			_inputAfterSpeech = false;
+			setInputEnabled(true);
+		}
 		if (_currentScene) {
 			if (_inputEnabled) {
 				updatePointer();
 				updateProbe();
+				updateInterface();
 			} else {
 				clearPointer();
 			}
@@ -522,9 +595,12 @@ void TesoroEngine::update() {
 void TesoroEngine::startAdventure() {
 	memset(_variables, 0, sizeof(_variables));
 	_inputEnabled = true;
+	_inputAfterSpeech = false;
 	_scripts.clear();
 	_scenes.clear();
 	_probeScene = nullptr;
+	loadInterface();
+	CursorMan.showMouse(false);
 	_movieHold = false;
 	_gameTime = 0;
 	_lastHostTime = _system->getMillis();
@@ -543,14 +619,12 @@ void TesoroEngine::startAdventure() {
 		_jim->setActive(true);
 		_jim->show(true);
 		_jim->look(ScriptOp::kLeft, _gameTime);
-		CursorMan.showMouse(true);
 		return;
 	}
 	// The game puts Jim at the floor's origin of the harbour, active and shown, before the script starts.
 	Common::SharedPtr<Scene> harbour = loadScene("PUERTO.LVL");
 	placeJim(harbour, harbour->entry().x, harbour->entry().y);
 	_state = kAdventure;
-	CursorMan.showMouse(false);
 	_jim->setActive(true);
 	_jim->show(true);
 	const ScriptBlock *block = _library.find("FANPRESENT");
@@ -561,6 +635,10 @@ void TesoroEngine::startAdventure() {
 
 void TesoroEngine::stopAdventure() {
 	_hovered.clear();
+	_interfaceHovered.clear();
+	_interface.reset();
+	_interfaceProbe.reset();
+	_cursor = nullptr;
 	_pointerText.clear();
 	if (_probeScene) {
 		_probeScene->removeObject(_probe.get());

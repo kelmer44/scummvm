@@ -109,6 +109,11 @@ public:
 	virtual void walkJim(int32 x, int32 y, ActionWaiter *waiter) = 0;
 	// Turns Jim to a direction (1 up, 2 down, 3 left, 4 right).
 	virtual void turnJim(int direction) = 0;
+	// Jim says a line. The pointer is switched off until he has finished.
+	virtual void jimSays(const TextEntry &text) = 0;
+	// The game clock, and the verb the pointer shows (the frame of its cursor).
+	virtual uint32 now() const = 0;
+	virtual void setVerb(int verb) = 0;
 };
 
 /**
@@ -145,6 +150,8 @@ public:
 	int32 parallax() const { return _parallax; }
 	void setParallax(int32 parallax) { _parallax = parallax; }
 	const SceneBounds &hitBounds() const { return _hitBounds; }
+	// For objects that only the scene's own logic moves (the interface).
+	void setPosition(int32 x, int32 y) { _x = x; _y = y; }
 
 	// What an object needs to speak: the colour and width of its text, and the banks that
 	// show it talking (the first frame of each is a closed mouth).
@@ -196,7 +203,7 @@ public:
 	 * object did nothing about it, 1 when it took it (so that the click is not a click on the
 	 * ground) and 3 when the frame's input is over. Only selectable objects are ever asked.
 	 */
-	virtual bool hitTest() const { return true; }
+	virtual bool hitTest(PointerHost &host) { return true; }
 	virtual int onHover(PointerHost &host) { return 0; }
 	virtual void onUnhover(PointerHost &host) {}
 	virtual int onLeftClick(PointerHost &host, int frame) { return 0; }
@@ -314,8 +321,11 @@ public:
 
 protected:
 	// What the object does for a verb (the pointer's frame when it was clicked). Returns the
-	// same codes as onLeftClick.
+	// same codes as onLeftClick: 3 when Jim started speaking, 0 when nothing happened.
 	virtual int runVerb(int verb);
+	// Jim answers a verb with the line the object has for it, or with the game's generic line
+	// when it has none (empty for the verbs that have no generic line).
+	int answerVerb(int verb, const char *genericLine);
 
 private:
 	int32 _approachX = 0, _approachY = 0;

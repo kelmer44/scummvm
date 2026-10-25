@@ -4,6 +4,7 @@ MODULE_OBJS = \
 	tesoro.o \
 	animation.o \
 	console.o \
+	interface.o \
 	jim.o \
 	metaengine.o \
 	overlap.o \

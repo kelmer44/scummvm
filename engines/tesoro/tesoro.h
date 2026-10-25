@@ -39,6 +39,7 @@
 
 #include "tesoro/detection.h"
 #include "tesoro/resources.h"
+#include "tesoro/interface.h"
 #include "tesoro/jim.h"
 #include "tesoro/renderer.h"
 #include "tesoro/scene.h"
@@ -82,6 +83,12 @@ private:
 	// shows their name, and the buttons pressed since the last frame.
 	Common::Array<SceneObject *> _hovered;
 	Common::String _pointerText;
+	// The interface (the verb bar and the drawn pointer) is a scene of its own, drawn over the
+	// room. Its pointer pass comes first; if it takes the pointer the room does not see it.
+	Common::SharedPtr<Scene> _interface;
+	Common::SharedPtr<PointerProbe> _interfaceProbe;
+	Common::Array<SceneObject *> _interfaceHovered;
+	CursorObject *_cursor = nullptr;
 	bool _leftClick = false, _rightClick = false;
 	Common::Point _clickAt;
 
@@ -90,6 +97,8 @@ private:
 	// The variable block the opening scripts run with; its ownership is still to be recovered.
 	uint8 _variables[256] = {};
 	bool _inputEnabled = true;
+	// Set while Jim answers a click: the pointer comes back when he has finished.
+	bool _inputAfterSpeech = false;
 	// Ctrl+F: the game clock runs faster. Speech with sound keeps its normal speed and ends on its audio or a click (muted lines run on the faster clock); movies of the adventure are skipped.
 	bool _fastMode = false;
 
@@ -145,6 +154,11 @@ private:
 	// Reacts to the objects that the probe overlapped on the last frame (hover, click). A click
 	// that no object takes is a click on the ground.
 	void updatePointer();
+	// One pointer pass over the objects that a probe overlapped; returns what the original's does.
+	int reactPointer(PointerProbe &probe, Common::Array<SceneObject *> &hovered);
+	// Loads the interface scene and puts the probe in it.
+	void loadInterface();
+	void updateInterface();
 	void clearPointer();
 
 	// PointerHost
@@ -152,6 +166,9 @@ private:
 	const TextEntry *findText(const Common::String &name) const override;
 	void walkJim(int32 x, int32 y, ActionWaiter *waiter) override;
 	void turnJim(int direction) override;
+	void jimSays(const TextEntry &text) override;
+	uint32 now() const override { return _gameTime; }
+	void setVerb(int verb) override;
 	void draw();
 	void update();
 

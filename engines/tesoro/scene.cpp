@@ -20,6 +20,7 @@
  */
 
 #include "tesoro/scene.h"
+#include "tesoro/interface.h"
 #include "tesoro/script.h"
 
 namespace Tesoro {
@@ -405,10 +406,41 @@ void InteractiveObject::actionDone() {
 	runVerb(_verb);
 }
 
+int InteractiveObject::answerVerb(int verb, const char *genericLine) {
+	const TextEntry *entry = nullptr;
+	if (!_verbTexts[verb].empty())
+		entry = _host->findText(_verbTexts[verb]);
+	else if (*genericLine)
+		entry = _host->findText(genericLine);
+	else
+		return 0;
+	if (!entry)
+		error("Tesoro: %s has no text for verb %d.", name().c_str(), verb);
+	_host->jimSays(*entry);
+	return 3;
+}
+
 int InteractiveObject::runVerb(int verb) {
-	// The default answers of the original's verbs (the lines in _verbTexts) and the objects that
-	// override them are not ported yet.
-	warning("Tesoro: verb %d of %s does nothing yet.", verb, name().c_str());
+	// Verb 0 answers only with a line of the object's own. The others fall back to a line that
+	// is the same for every object. Verbs 5 and 6 do nothing by default. Objects that answer a
+	// verb in their own way (puzzles, doors) override this in the original; those are not ported.
+	switch (verb) {
+	case 0:
+		return answerVerb(0, "");
+	case 1:
+		return answerVerb(1, "OBJ125T03");
+	case 2:
+		return answerVerb(2, "OBJ096T07");
+	case 3:
+		return answerVerb(3, "OBJ106T05");
+	case 4:
+		return answerVerb(4, "OBJ106T05");
+	case 5:
+	case 6:
+		return 0;
+	}
+	// Verbs 7 and up use an inventory item on the object, which does not exist yet.
+	warning("Tesoro: using inventory item %d on %s does nothing yet.", verb - 7, name().c_str());
 	return 0;
 }
 
@@ -510,6 +542,12 @@ SceneObject *Scene::createObject(const SceneObjectRecord &record, const SceneGro
 		return new PropObject(record, group, scene, now);
 	case 7:
 		return new FloorObject(record, group, scene, now);
+	case 2:
+		return new IconGroupObject(record, group, scene);
+	case 10:
+		return new CursorObject(record, group, scene, now);
+	case 11:
+		return new ControlIconObject(record, group, scene, now);
 	case 5: // characters
 		object = new CharacterObject(record, group, scene, now);
 		limits = "it is drawn, but its behaviour is not implemented";
