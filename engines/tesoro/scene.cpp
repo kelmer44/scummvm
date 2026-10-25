@@ -21,6 +21,7 @@
 
 #include "tesoro/scene.h"
 #include "tesoro/interface.h"
+#include "tesoro/objects.h"
 #include "tesoro/script.h"
 
 namespace Tesoro {
@@ -345,8 +346,9 @@ bool PropObject::sprite(const SceneView &view, SceneSprite &sprite) const {
 	return frameSprite(view, sprite);
 }
 
-InteractiveObject::InteractiveObject(const SceneObjectRecord &record, const SceneGroup &group, const SceneData &scene, uint32 now, uint parameterOffset)
+InteractiveObject::InteractiveObject(const SceneObjectRecord &record, const SceneGroup &group, const SceneData &scene, uint32 now, uint parameterOffset, uint variableSize)
 	: SceneObject(record, group, scene) {
+	allocateVariables(variableSize);
 	if (record.parameters.size() <= parameterOffset)
 		error("Tesoro: Invalid interactive object %s.", record.name.c_str());
 	if (!record.bankIndices.empty()) {
@@ -399,6 +401,10 @@ int InteractiveObject::onLeftClick(PointerHost &host, int frame) {
 }
 
 void InteractiveObject::actionDone() {
+	arrive();
+}
+
+void InteractiveObject::arrive() {
 	// Jim has arrived: he turns to the object and the verb runs.
 	if (!_host)
 		return;
@@ -448,9 +454,16 @@ bool InteractiveObject::sprite(const SceneView &view, SceneSprite &sprite) const
 	return frameSprite(view, sprite);
 }
 
+// How many variables each kind of character owns.
+static uint characterVariables(uint characterClass) {
+	static const byte sizes[17] = {4, 14, 4, 0, 10, 3, 6, 4, 3, 0, 1, 1, 0, 15, 2, 11, 7};
+	return characterClass < ARRAYSIZE(sizes) ? sizes[characterClass] : 0;
+}
+
 CharacterObject::CharacterObject(const SceneObjectRecord &record, const SceneGroup &group,
                                  const SceneData &scene, uint32 now)
-	: InteractiveObject(record, group, scene, now, 4) {
+	: InteractiveObject(record, group, scene, now, 4, record.parameters.size() > 5 ? characterVariables(record.parameters[5]) : 0) {
+	_class = record.parameters.size() > 5 ? record.parameters[5] : 0;
 	show(true);
 	// The text of what a character says is coloured and wrapped as its record says (the first
 	// four bytes). Its idle bank is the last one whose name starts with MIR (as in "mirar"), and
@@ -465,6 +478,36 @@ CharacterObject::CharacterObject(const SceneObjectRecord &record, const SceneGro
 			config.banks.push_back(i);
 	}
 	setTalkConfig(config);
+}
+
+int CharacterObject::runVerb(int verb) {
+	PointerHost &game = *host();
+	if (verb == 2 && _class == 0) {
+		// The captain: what he says depends on how far two other characters have got.
+		SceneObject *nudero = game.levelScene(2)->find("NUDERO");
+		SceneObject *recruiter = game.levelScene(1)->find("RECLUTADOR");
+		if (!nudero || !nudero->variables() || !recruiter || !recruiter->variables())
+			error("Tesoro: The captain's conversation needs the tavern and the harbour.");
+		variables()[1] = nudero->variables()[4] != 0;
+		variables()[2] = recruiter->variables()[3];
+		game.startObjectScript("FCAPITAN", "hablar", variables(), *scene());
+		return 1;
+	}
+	if (verb == 2 && _class == 1) {
+		// The recruiter: his conversation moves on once the captain has had his say and once Jim
+		// has the half doubloon.
+		SceneObject *captain = game.levelScene(0)->find("CAPITAN");
+		SceneObject *doubloon = game.interfaceScene()->find("IHALFDOBLON");
+		if (!captain || !captain->variables() || !doubloon)
+			error("Tesoro: The recruiter's conversation needs the office and the inventory.");
+		if (variables()[0] < 4 && captain->variables()[0] != 0)
+			variables()[0] = 4;
+		if (variables()[0] < 6 && doubloon->isActive())
+			variables()[0] = 6;
+		game.startObjectScript("FRECLUTADOR", "hablar", variables(), *scene());
+		return 1;
+	}
+	return InteractiveObject::runVerb(verb);
 }
 
 void CharacterObject::turn(int direction, uint32 now) {
@@ -542,6 +585,14 @@ SceneObject *Scene::createObject(const SceneObjectRecord &record, const SceneGro
 		return new PropObject(record, group, scene, now);
 	case 7:
 		return new FloorObject(record, group, scene, now);
+	case 6:
+		object = new DoorObject(record, group, scene, now, record.parameters.size() > 1 ? record.parameters[1] : 0);
+		limits = "it works, but only some of the doors' special behaviour is ported";
+		break;
+	case 12:
+		object = new ScriptedObject(record, group, scene, now, record.parameters.size() > 1 ? record.parameters[1] : 0);
+		limits = "it works, but only some of the objects' special behaviour is ported";
+		break;
 	case 2:
 		return new IconGroupObject(record, group, scene);
 	case 10:
@@ -552,9 +603,7 @@ SceneObject *Scene::createObject(const SceneObjectRecord &record, const SceneGro
 		object = new CharacterObject(record, group, scene, now);
 		limits = "it is drawn, but its behaviour is not implemented";
 		break;
-	case 6: // interactive objects
-	case 9:
-	case 12:
+	case 9: // interactive objects
 	case 13:
 	case 17:
 	case 20:
@@ -592,6 +641,7 @@ Scene::Scene(const SceneData &scene, uint32 now) {
 			const SceneObjectRecord &record = source.objects[j];
 			Common::SharedPtr<SceneObject> object(createObject(record, source, scene, now));
 			_objects.push_back(object);
+			object->setScene(this);
 			object->setParallax(source.parallax);
 			object->setGroup(i);
 			if (!(object->flags() & SceneObject::kGrouped))
@@ -619,6 +669,7 @@ void Scene::addObject(const Common::SharedPtr<SceneObject> &object, uint group) 
 	if (group >= _groups.size())
 		error("Tesoro: The scene has no group %u.", group);
 	_objects.push_back(object);
+	object->setScene(this);
 	object->setParallax(_groups[group].parallax);
 	object->setGroup(group);
 	Common::Array<Common::SharedPtr<SceneObject>> &list = _groups[group].objects;

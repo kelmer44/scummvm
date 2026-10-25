@@ -97,6 +97,7 @@ public:
 };
 
 struct TextEntry;
+class Scene;
 
 // What the pointer's reactions need from the rest of the game.
 class PointerHost {
@@ -114,6 +115,16 @@ public:
 	// The game clock, and the verb the pointer shows (the frame of its cursor).
 	virtual uint32 now() const = 0;
 	virtual void setVerb(int verb) = 0;
+	// The scene at an index of the game's scene table (loaded when it is asked for), and the
+	// interface scene that holds the inventory.
+	virtual Scene *levelScene(int level) = 0;
+	virtual Scene *interfaceScene() = 0;
+	// Starts the label of a script block with a block of variables (null for none) in a scene.
+	virtual void startObjectScript(const char *block, const char *label, uint8 *variables, Scene &scene) = 0;
+	// Moves Jim to a point of a scene, facing a direction (1 up, 2 down, 3 left, 4 right).
+	virtual void transferJim(Scene &scene, int32 x, int32 y, int direction) = 0;
+	// The index of the scene that Jim is in.
+	virtual int jimLevel() const = 0;
 };
 
 /**
@@ -213,6 +224,14 @@ public:
 	// The group of the scene that the object belongs to.
 	uint group() const { return _group; }
 	void setGroup(uint group) { _group = group; }
+	// The scene that holds the object.
+	Scene *scene() const { return _scene; }
+	void setScene(Scene *scene) { _scene = scene; }
+	// The block of variables that the object owns, which scripts started by it work on (null when it has none).
+	uint8 *variables() { return _variables.empty() ? nullptr : &_variables[0]; }
+	// The animation bank the object is showing.
+	uint currentBank() const { return _currentBank; }
+	bool isActive() const { return (_flags & kActive) != 0; }
 
 	// A source of random numbers for the objects' mouths.
 
@@ -225,6 +244,7 @@ protected:
 	SceneObject(uint32 kind, uint64 nameId, const Common::Array<Common::SharedPtr<Animation>> &banks, int32 x, int32 y, uint16 depth);
 
 	void addFlags(uint32 flags) { _flags |= flags; }
+	void allocateVariables(uint size) { _variables.resize(size); }
 	uint animationCount() const { return _banks.size(); }
 	const Common::String &animationName(uint bank) const { return _banks[bank]->name; }
 	const TalkConfig &talkConfig() const { return _talk; }
@@ -277,6 +297,8 @@ private:
 	int32 _parallax = 300;
 	SceneBounds _hitBounds;
 	uint _group = 0;
+	Scene *_scene = nullptr;
+	Common::Array<uint8> _variables;
 	Common::Array<int16> _outline; // the frame's floor points as x, y pairs
 	Common::String _name;
 
@@ -308,7 +330,7 @@ struct SceneMessage {
 // Kinds 6, 9, 12, 13, 17 and 20: objects the player can interact with.
 class InteractiveObject : public SceneObject, public ActionWaiter {
 public:
-	InteractiveObject(const SceneObjectRecord &record, const SceneGroup &group, const SceneData &scene, uint32 now, uint parameterOffset = 0);
+	InteractiveObject(const SceneObjectRecord &record, const SceneGroup &group, const SceneData &scene, uint32 now, uint parameterOffset = 0, uint variableSize = 0);
 	bool sprite(const SceneView &view, SceneSprite &sprite) const override;
 	bool dropsMovement() const override { return true; }
 
@@ -326,6 +348,15 @@ protected:
 	// Jim answers a verb with the line the object has for it, or with the game's generic line
 	// when it has none (empty for the verbs that have no generic line).
 	int answerVerb(int verb, const char *genericLine);
+	// Where Jim stands to use the object and the way he faces there.
+	int32 approachX() const { return _approachX; }
+	int32 approachY() const { return _approachY; }
+	int approachDirection() const { return _approachDirection; }
+	// Jim arrives at the approach point: he turns to the object and the verb runs.
+	void arrive();
+	PointerHost *host() const { return _host; }
+	void bindHost(PointerHost &host) { _host = &host; }
+	int clickedVerb() const { return _verb; }
 
 private:
 	int32 _approachX = 0, _approachY = 0;
@@ -344,8 +375,13 @@ public:
 	// A character stands facing a direction in its idle bank, which has a frame for each.
 	void turn(int direction, uint32 now) override;
 
+protected:
+	// Talking to the captain and to the recruiter starts their conversations.
+	int runVerb(int verb) override;
+
 private:
 	uint _idleBank = 0;
+	uint _class = 0;   // the kind of character, which decides its variables and what it does for a verb
 };
 
 // Kind 7: the walkable ground of a room. It is not drawn; its outline gives the scale of

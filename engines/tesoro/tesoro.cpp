@@ -31,6 +31,7 @@
 #include "gui/message.h"
 
 #include "tesoro/tesoro.h"
+#include "tesoro/objects.h"
 #include "tesoro/testing.h"
 #include "tesoro/detection.h"
 #include "tesoro/console.h"
@@ -287,6 +288,43 @@ void TesoroEngine::updatePointer() {
 void TesoroEngine::setVerb(int verb) {
 	if (_cursor)
 		_cursor->setVerb(verb, _gameTime);
+}
+
+Scene *TesoroEngine::levelScene(int level) {
+	return scene(ScriptOp::kLevel, level);
+}
+
+void TesoroEngine::startObjectScript(const char *block, const char *label, uint8 *variables, Scene &scene) {
+	const ScriptBlock *found = _library.find(block);
+	if (!found)
+		error("Tesoro: The script %s does not exist.", block);
+	// An object without variables of its own starts the script with a block of zeros.
+	if (!variables) {
+		memset(_noVariables, 0, sizeof(_noVariables));
+		variables = _noVariables;
+	}
+	startScript(*found, encodeName(label), variables, scene);
+}
+
+int TesoroEngine::jimLevel() const {
+	for (uint i = 0; i < ARRAYSIZE(kSceneNames); ++i) {
+		Common::HashMap<Common::String, Common::SharedPtr<Scene>>::const_iterator it = _scenes.find(kSceneNames[i]);
+		if (it != _scenes.end() && it->_value == _currentScene)
+			return i;
+	}
+	return -1;
+}
+
+void TesoroEngine::transferJim(Scene &destination, int32 x, int32 y, int direction) {
+	for (Common::HashMap<Common::String, Common::SharedPtr<Scene>>::iterator it = _scenes.begin(); it != _scenes.end(); ++it) {
+		if (it->_value.get() == &destination) {
+			Common::SharedPtr<Scene> scene = it->_value;
+			placeJim(scene, x, y);
+			_jim->look(ScriptOp::Direction(direction), _gameTime);
+			return;
+		}
+	}
+	error("Tesoro: Jim is sent to a scene that is not loaded.");
 }
 
 void TesoroEngine::loadInterface() {
@@ -606,10 +644,28 @@ void TesoroEngine::startAdventure() {
 	if (TestingShortcuts::kStartInOffice) {
 		// What the introduction leaves behind: the harbour's door active but hidden, the captain
 		// gone from the office and Jim at its door (native ordinal 5 and the end of FANPRESENT).
-		if (SceneObject *door = loadScene("PUERTO.LVL")->find("PUERTA1")) {
+		Common::SharedPtr<Scene> harbour = loadScene("PUERTO.LVL");
+		if (SceneObject *door = harbour->find("PUERTA1")) {
 			door->setActive(true);
 			door->show(false);
 		}
+		// The harbour as the script reveals it: no black backdrop, the gull and the recruiter
+		// there and moving, the ship sailing.
+		SceneMessage off, on, loop, show;
+		off.kind = SceneMessage::kActivate;
+		on.kind = SceneMessage::kActivate;
+		on.on = true;
+		loop.kind = SceneMessage::kPlay;
+		loop.mode = SceneMessage::kLoop;
+		show.kind = SceneMessage::kShow;
+		show.on = true;
+		harbour->send(_gameTime, "FONDONEGRO", off);
+		harbour->send(_gameTime, "GAVIOTA", on);
+		harbour->send(_gameTime, "GAVIOTA", loop);
+		harbour->send(_gameTime, "RECLUTADOR", on);
+		harbour->send(_gameTime, "RECLUTADOR", loop);
+		harbour->send(_gameTime, "BARCO", show);
+		harbour->send(_gameTime, "BARCO", loop);
 		Common::SharedPtr<Scene> office = loadScene("DESPACHO.LVL");
 		if (SceneObject *captain = office->find("CAPITAN"))
 			captain->setActive(false);
@@ -697,9 +753,9 @@ Scene *TesoroEngine::scene(ScriptOp::Scope scope, int level) {
 			error("Tesoro: A script names scene %d, which does not exist.", level);
 		return loadScene(kSceneNames[level]).get();
 	case ScriptOp::kInventory:
-		break;
+		return _interface.get();
 	}
-	error("Tesoro: A script sends a message to the inventory, which is not implemented.");
+	return nullptr;
 }
 
 void TesoroEngine::startScript(const ScriptBlock &block, uint64 labelId, uint8 *variables, Scene &scene) {
@@ -796,6 +852,14 @@ void TesoroEngine::doNative(uint scriptType, uint ordinal, Script &script) {
 		default:
 			break;
 		}
+	}
+	if (scriptType == 21 && ordinal == 0) {
+		// The captain leaves the office: the script has Jim walk to the door, and the door is used.
+		SceneObject *door = loadScene("DESPACHO.LVL")->find("PUERTA1");
+		if (!door || door->kind() != 6)
+			error("Tesoro: The office has no door.");
+		static_cast<DoorObject *>(door)->useFromScript(*this);
+		return;
 	}
 	error("Tesoro: Native action %u of script type %u is not implemented.", ordinal, scriptType);
 }

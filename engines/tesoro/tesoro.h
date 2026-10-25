@@ -96,6 +96,8 @@ private:
 	Common::Array<Common::SharedPtr<Script>> _scripts;
 	// The variable block the opening scripts run with; its ownership is still to be recovered.
 	uint8 _variables[256] = {};
+	// For the scripts that objects start with no variables of their own.
+	uint8 _noVariables[256] = {};
 	bool _inputEnabled = true;
 	// Set while Jim answers a click: the pointer comes back when he has finished.
 	bool _inputAfterSpeech = false;
@@ -169,6 +171,11 @@ private:
 	void jimSays(const TextEntry &text) override;
 	uint32 now() const override { return _gameTime; }
 	void setVerb(int verb) override;
+	Scene *levelScene(int level) override;
+	Scene *interfaceScene() override { return _interface.get(); }
+	void startObjectScript(const char *block, const char *label, uint8 *variables, Scene &scene) override;
+	void transferJim(Scene &scene, int32 x, int32 y, int direction) override;
+	int jimLevel() const override;
 	void draw();
 	void update();
 
