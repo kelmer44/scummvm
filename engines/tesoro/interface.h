@@ -65,6 +65,9 @@ public:
 	// Finds the objects it works with in the scene that it belongs to.
 	void bind(Scene &scene);
 
+	// Moves the strip, the shade and the icons sideways (the interface scrolls to the inventory page).
+	void shiftX(int32 dx);
+
 	bool hitTest(PointerHost &host) override;
 	int onHover(PointerHost &host) override;
 	void onUnhover(PointerHost &host) override;

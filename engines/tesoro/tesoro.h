@@ -89,6 +89,12 @@ private:
 	Common::SharedPtr<PointerProbe> _interfaceProbe;
 	Common::Array<SceneObject *> _interfaceHovered;
 	CursorObject *_cursor = nullptr;
+	ControlIconObject *_control = nullptr;
+	// The inventory item in Jim's hand, whether the inventory page is open, and a right click waiting to open or close it.
+	SceneObject *_heldItem = nullptr;
+	bool _inventoryOpen = false, _toggleInventory = false;
+	uint32 _lastLeftRelease = 0;
+	void toggleInventory();
 	bool _leftClick = false, _rightClick = false;
 	// A menu of choices that a script is showing (_menuShown: a script asked for it on this frame; _menuSession: from the
 	// first menu of a conversation until its scripts end, during which the pointer is the arrow): the lines (as laid out on the last frame), where
@@ -188,6 +194,10 @@ private:
 	void startObjectScript(const char *block, const char *label, uint8 *variables, Scene &scene) override;
 	void transferJim(Scene &scene, int32 x, int32 y, int direction) override;
 	int jimLevel() const override;
+	SceneObject *heldItem() const override { return _heldItem; }
+	void holdItem(SceneObject *item, int cursorFrame) override;
+	bool inventoryOpen() const override { return _inventoryOpen; }
+	void closeInventory() override { if (_inventoryOpen) toggleInventory(); }
 	void draw();
 	void update();
 

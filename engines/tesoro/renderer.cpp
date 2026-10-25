@@ -46,9 +46,10 @@ SceneRenderer::SceneRenderer() {
 	_depth.resize(640 * 480);
 }
 
-void SceneRenderer::draw(Graphics::Surface &surface, const Common::Array<SceneSprite> &sprites) {
+void SceneRenderer::draw(Graphics::Surface &surface, const Common::Array<SceneSprite> &sprites, bool clear) {
 	assert(surface.w == 640 && surface.h == 480 && surface.format.bytesPerPixel == 4);
-	surface.fillRect(Common::Rect(640, 480), 0xff000000); // paint surface black
+	if (clear)
+		surface.fillRect(Common::Rect(640, 480), 0xff000000); // paint surface black
 	Common::fill(_depth.begin(), _depth.end(), 0x10000U); // initialize depth buffer with maximum depth value
 
 	for (uint i = 0; i < sprites.size(); ++i) {

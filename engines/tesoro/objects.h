@@ -71,6 +71,40 @@ private:
 	uint _class;
 };
 
+// Kind 13: the items of the inventory (all in the interface scene). An item that is active is
+// owned. Activating one by a script, or clicking it in the inventory, puts it in Jim's hand, where it
+// is the pointer; deactivating it takes it away.
+class ItemObject : public InteractiveObject {
+public:
+	ItemObject(const SceneObjectRecord &record, const SceneGroup &group, const SceneData &scene, uint32 now);
+	// Scripts reach the items without any click, so they need the game from the start.
+	void setGame(PointerHost &game) { _game = &game; }
+	// The number of the item; its cursor frame is this plus 7.
+	int index() const { return _index; }
+
+	void setActive(bool active) override;
+	int onLeftClick(PointerHost &host, int frame) override;
+
+private:
+	// What Jim says when this item meets the thing named, if it has a line for it.
+	const TextEntry *useLine(PointerHost &host, uint64 target) const;
+
+	PointerHost *_game = nullptr;
+	int _index = 0;
+	Common::Array<uint64> _useNames;
+	Common::Array<Common::String> _useLines;
+};
+
+// Kind 15: the inventory page. It covers the page and takes every click, so that none goes to the room.
+class InventoryPageObject : public InteractiveObject {
+public:
+	InventoryPageObject(const SceneObjectRecord &record, const SceneGroup &group, const SceneData &scene, uint32 now);
+	bool hitTest(PointerHost &host) override { return true; }
+	int onHover(PointerHost &host) override { return 1; }
+	void onUnhover(PointerHost &host) override {}
+	int onLeftClick(PointerHost &host, int frame) override { return 1; }
+};
+
 } // namespace Tesoro
 
 #endif

@@ -231,4 +231,105 @@ int ScriptedObject::runVerb(int verb) {
 	return InteractiveObject::runVerb(verb);
 }
 
+ItemObject::ItemObject(const SceneObjectRecord &record, const SceneGroup &group, const SceneData &scene, uint32 now)
+	: InteractiveObject(record, group, scene, now, 0, 0) {
+	const Bytes &p = record.parameters;
+	if (p.size() < 0x64)
+		error("Tesoro: Invalid inventory item %s.", record.name.c_str());
+	_index = p[1];
+	auto string = [&](uint at) {
+		Common::String text;
+		for (uint i = at; i < at + 12 && i < p.size() && p[i]; ++i)
+			text += char(p[i]);
+		return text;
+	};
+	// Its name in the dialogue tables is at 2; when it has none the lines are read from 2 as well,
+	// not from 0xE.
+	setTextName(string(2));
+	const uint linesAt = p[2] ? 0xe : 2;
+	static const uint kVerbOfText[6] = {0, 1, 3, 4, 5, 2};
+	for (uint k = 0; k < 6; ++k)
+		setVerbText(kVerbOfText[k], string(linesAt + 12 * k));
+	// What it says to the other things it can meet: 24-byte entries from 0x7C (the name of the thing, then a line).
+	const uint count = p[0x62] | (p[0x63] << 8);
+	if (p.size() < 0x7c + 0x18 * count)
+		error("Tesoro: Invalid inventory item %s.", record.name.c_str());
+	for (uint i = 0; i < count; ++i) {
+		_useNames.push_back(encodeName(string(0x7c + 0x18 * i)));
+		_useLines.push_back(string(0x7c + 0x18 * i + 12));
+	}
+	// An item is owned once it is activated.
+	SceneObject::setActive(false);
+}
+
+void ItemObject::setActive(bool active) {
+	if (!_game)
+		error("Tesoro: The item %s is used before the game is known.", name().c_str());
+	if (!active) {
+		if (_game->heldItem() == this) {
+			_game->holdItem(nullptr, 0);
+			show(true);
+		}
+	} else {
+		// With the inventory open, the item it replaces goes back and this one is in the hand.
+		if (_game->inventoryOpen()) {
+			if (SceneObject *held = _game->heldItem())
+				held->show(true);
+			show(false);
+		}
+		_game->holdItem(this, _index + 7);
+	}
+	SceneObject::setActive(active);
+}
+
+const TextEntry *ItemObject::useLine(PointerHost &host, uint64 target) const {
+	for (uint i = 0; i < _useNames.size(); ++i) {
+		if (_useNames[i] != target)
+			continue;
+		if (_useLines[i].empty())
+			return nullptr;
+		const TextEntry *entry = host.findText(_useLines[i]);
+		if (!entry)
+			error("Tesoro: %s has no text %s.", name().c_str(), _useLines[i].c_str());
+		return entry;
+	}
+	return nullptr;
+}
+
+int ItemObject::onLeftClick(PointerHost &host, int frame) {
+	bindHost(host);
+	setClickedVerb(frame);
+	// An item with a line of its own for the verb says it.
+	if (frame < 7 && answerVerb(frame, "") != 0)
+		return 3;
+	if (frame <= 6) {
+		// Any other verb takes the item in the hand (verb 0 included).
+		setActive(true);
+		return 3;
+	}
+	// An item in the hand meets this one: either has a line for the other.
+	SceneObject *held = host.heldItem();
+	if (!held || held->kind() != 13)
+		error("Tesoro: An item is used on %s without one in the hand.", name().c_str());
+	const ItemObject *other = static_cast<const ItemObject *>(held);
+	const TextEntry *line = useLine(host, other->nameId());
+	if (!line)
+		line = other->useLine(host, nameId());
+	if (!line) {
+		// Nothing is known to happen between them (what some pairs do besides talk is not ported).
+		line = host.findText("MODELO2");
+		if (!line)
+			error("Tesoro: The refusal of an item is missing.");
+		host.jimSays(*line);
+		return 3;
+	}
+	host.jimSays(*line);
+	host.closeInventory();
+	return 3;
+}
+
+InventoryPageObject::InventoryPageObject(const SceneObjectRecord &record, const SceneGroup &group, const SceneData &scene, uint32 now)
+	: InteractiveObject(record, group, scene, now, 0, 0) {
+}
+
 } // namespace Tesoro

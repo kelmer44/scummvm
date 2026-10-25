@@ -447,9 +447,18 @@ int InteractiveObject::runVerb(int verb) {
 	case 6:
 		return 0;
 	}
-	// Verbs 7 and up use an inventory item on the object, which does not exist yet.
-	warning("Tesoro: using inventory item %d on %s does nothing yet.", verb - 7, name().c_str());
-	return 0;
+	// Verbs 7 and up use the inventory item of that number (less 7) on the object.
+	_host->holdItem(nullptr, 0);
+	return itemUsed(verb - 7);
+}
+
+int InteractiveObject::itemUsed(int item) {
+	// The pen refuses with its own words; everything else with a blank line.
+	const TextEntry *entry = _host->findText(item == 0 ? "ICON01T058" : "MODELO2");
+	if (!entry)
+		error("Tesoro: The refusal of an item is missing.");
+	_host->jimSays(*entry);
+	return 3;
 }
 
 bool InteractiveObject::sprite(const SceneView &view, SceneSprite &sprite) const {
@@ -510,6 +519,34 @@ int CharacterObject::runVerb(int verb) {
 		return 1;
 	}
 	return InteractiveObject::runVerb(verb);
+}
+
+int CharacterObject::itemUsed(int item) {
+	PointerHost &game = *host();
+	if (_class == 0 && item == 0) {
+		// The ballpoint shown to the captain.
+		SceneObject *nudero = game.levelScene(2)->find("NUDERO");
+		if (!nudero || !nudero->variables())
+			error("Tesoro: The captain's conversation needs the tavern.");
+		variables()[1] = nudero->variables()[4] != 0;
+		game.startObjectScript("FIBOLI", "capitan", variables(), *scene());
+		return 3;
+	}
+	if (_class == 1 && (item == 0 || item == 7 || item == 45)) {
+		// The recruiter's state moves on as for talking, then he answers to the item.
+		SceneObject *captain = game.levelScene(0)->find("CAPITAN");
+		SceneObject *doubloon = game.interfaceScene()->find("IHALFDOBLON");
+		if (!captain || !captain->variables() || !doubloon)
+			error("Tesoro: The recruiter needs the office and the inventory.");
+		if (variables()[0] < 4 && captain->variables()[0] != 0)
+			variables()[0] = 4;
+		if (variables()[0] < 6 && doubloon->isActive())
+			variables()[0] = 6;
+		game.startObjectScript(item == 0 ? "FIBOLI" : item == 7 ? "FICNUDO" : "FIHLFDBLN", "reclutador",
+		                       item == 45 ? variables() : nullptr, *scene());
+		return 1;
+	}
+	return InteractiveObject::itemUsed(item);
 }
 
 void CharacterObject::turn(int direction, uint32 now) {
@@ -605,8 +642,11 @@ SceneObject *Scene::createObject(const SceneObjectRecord &record, const SceneGro
 		object = new CharacterObject(record, group, scene, now);
 		limits = "it is drawn, but its behaviour is not implemented";
 		break;
-	case 9: // interactive objects
 	case 13:
+		return new ItemObject(record, group, scene, now);
+	case 15:
+		return new InventoryPageObject(record, group, scene, now);
+	case 9: // interactive objects
 	case 17:
 	case 20:
 		object = new InteractiveObject(record, group, scene, now);

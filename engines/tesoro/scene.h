@@ -125,6 +125,13 @@ public:
 	virtual void transferJim(Scene &scene, int32 x, int32 y, int direction) = 0;
 	// The index of the scene that Jim is in.
 	virtual int jimLevel() const = 0;
+	// The inventory item in Jim's hand (null for none). Holding an item shows it as the pointer
+	// (its cursor frame); letting go (null) puts it back in the inventory and the pointer to the arrow.
+	virtual SceneObject *heldItem() const = 0;
+	virtual void holdItem(SceneObject *item, int cursorFrame) = 0;
+	// The inventory page replaces the screen under the verb bar; this opens or closes it.
+	virtual bool inventoryOpen() const = 0;
+	virtual void closeInventory() = 0;
 };
 
 /**
@@ -137,7 +144,7 @@ public:
 	enum Flags { kActive = 2, kShown = 4, kCollidable = 8, kHasAnimation = 16, kGrouped = 0x100, kSelectable = 0x400 };
 	virtual ~SceneObject() {}
 
-	void setActive(bool active);
+	virtual void setActive(bool active);
 	void show(bool shown);
 	bool play(uint bank, uint32 now, uint16 first = 0, int last = -1, bool loop = false, bool cacheDuration = false);
 
@@ -346,6 +353,10 @@ protected:
 	// What the object does for a verb (the pointer's frame when it was clicked). Returns the
 	// same codes as onLeftClick: 3 when Jim started speaking, 0 when nothing happened.
 	virtual int runVerb(int verb);
+	// Jim has an inventory item (by its number) in his hand when he gets to the object: it goes
+	// back to the inventory, the pointer to the arrow, and the object answers. By default Jim
+	// refuses; characters and puzzle objects answer in their own way.
+	virtual int itemUsed(int item);
 	// Jim answers a verb with the line the object has for it, or with the game's generic line
 	// when it has none (empty for the verbs that have no generic line).
 	int answerVerb(int verb, const char *genericLine);
@@ -357,6 +368,9 @@ protected:
 	void arrive();
 	PointerHost *host() const { return _host; }
 	void bindHost(PointerHost &host) { _host = &host; }
+	void setTextName(const Common::String &name) { _textName = name; }
+	void setVerbText(int verb, const Common::String &text) { _verbTexts[verb] = text; }
+	void setClickedVerb(int verb) { _verb = verb; }
 	int clickedVerb() const { return _verb; }
 
 private:
@@ -377,8 +391,9 @@ public:
 	void turn(int direction, uint32 now) override;
 
 protected:
-	// Talking to the captain and to the recruiter starts their conversations.
+	// Talking to the captain and to the recruiter starts their conversations; so does giving them an item.
 	int runVerb(int verb) override;
+	int itemUsed(int item) override;
 
 private:
 	uint _idleBank = 0;
@@ -477,6 +492,9 @@ public:
 	// The hit box and outline of every collidable, active object as the last frame's overlap tests
 	// saw them, on the screen.
 	void debugShapes(Common::Array<SceneDebugShape> &shapes) const;
+
+	// Every object the scene has, in file order.
+	const Common::Array<Common::SharedPtr<SceneObject>> &objects() const { return _objects; }
 
 	// The floor that the room names, if it has one.
 	const FloorObject *floor() const { return _floor; }

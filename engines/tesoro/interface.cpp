@@ -88,6 +88,13 @@ void ControlIconObject::bind(Scene &scene) {
 		error("Tesoro: The verb bar has no icons.");
 }
 
+void ControlIconObject::shiftX(int32 dx) {
+	setPosition(x() + dx, y());
+	_square->setPosition(_square->x() + dx, _square->y());
+	for (uint i = 0; i < _icons.size(); ++i)
+		_icons[i]->setPosition(_icons[i]->x() + dx, _icons[i]->y());
+}
+
 bool ControlIconObject::hitTest(PointerHost &host) {
 	// Touching the top edge: the strip grows to hold the pointer while it is on the bar, the icons
 	// and the shade behind them slide in, and nothing is lit yet.
@@ -149,9 +156,11 @@ void ControlIconObject::onUnhover(PointerHost &host) {
 }
 
 int ControlIconObject::onLeftClick(PointerHost &host, int frame) {
-	// Choosing an icon changes the pointer's verb to its place on the bar.
-	if (_hovered >= 0)
+	// Choosing an icon changes the pointer's verb to its place on the bar; an item in the hand goes back.
+	if (_hovered >= 0) {
+		host.holdItem(nullptr, 0);
 		host.setVerb(_hovered);
+	}
 	return 1;
 }
 

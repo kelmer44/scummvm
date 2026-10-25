@@ -271,6 +271,11 @@ int TesoroEngine::reactPointer(PointerProbe &probe, Common::Array<SceneObject *>
 }
 
 void TesoroEngine::updatePointer() {
+	if (_toggleInventory) {
+		_toggleInventory = false;
+		toggleInventory();
+		placeCursor();
+	}
 	// The interface sees the pointer first.
 	int result = _interface ? reactPointer(*_interfaceProbe, _interfaceHovered) : 0;
 	bool onInterface = result != 0;
@@ -288,6 +293,33 @@ void TesoroEngine::updatePointer() {
 void TesoroEngine::setVerb(int verb) {
 	if (_cursor)
 		_cursor->setVerb(verb, _gameTime);
+}
+
+void TesoroEngine::holdItem(SceneObject *item, int cursorFrame) {
+	if (!item) {
+		if (_heldItem)
+			_heldItem->show(true);
+		_heldItem = nullptr;
+		setVerb(0);
+		return;
+	}
+	_heldItem = item;
+	setVerb(cursorFrame);
+}
+
+void TesoroEngine::toggleInventory() {
+	if (!_interface || !_control)
+		return;
+	// The interface slides one screen to the right (and back), taking the verb bar along. The item in
+	// the hand is out of the page while it is open.
+	const bool open = !_inventoryOpen;
+	if (_heldItem)
+		_heldItem->show(!open);
+	_interface->camera().setPosition(open ? 960 : 320, 240);
+	_control->shiftX(open ? 640 : -640);
+	_inventoryOpen = open;
+	_interfaceHovered.clear();
+	_pointerText.clear();
 }
 
 Scene *TesoroEngine::levelScene(int level) {
@@ -333,7 +365,7 @@ void TesoroEngine::loadInterface() {
 	SceneBounds bounds;
 	bounds.left = 0;
 	bounds.bottom = 0;
-	bounds.right = 640;
+	bounds.right = 1280;  // the inventory page is the screen to the right of the main one
 	bounds.top = 480;
 	_interface->camera().setBounds(bounds);
 	_interface->camera().setPosition(320, 240);
@@ -342,6 +374,14 @@ void TesoroEngine::loadInterface() {
 	if (!_cursor || _cursor->kind() != 10 || !control || control->kind() != 11)
 		error("Tesoro: The interface is missing its pointer.");
 	control->bind(*_interface);
+	_control = control;
+	_heldItem = nullptr;
+	_inventoryOpen = false;
+	_toggleInventory = false;
+	// The items are reached by scripts at any time.
+	for (uint i = 0; i < _interface->objects().size(); ++i)
+		if (_interface->objects()[i]->kind() == 13)
+			static_cast<ItemObject *>(_interface->objects()[i].get())->setGame(*this);
 	_interfaceProbe.reset(new PointerProbe());
 	_interface->addObject(_interfaceProbe, 0);
 	_interfaceHovered.clear();
@@ -352,7 +392,7 @@ void TesoroEngine::placeCursor() {
 		return;
 	// The pointer in the interface's world: x to the right, y upwards, from the corner of the screen.
 	const Common::Point mouse = _eventMan->getMousePos();
-	_cursor->setPosition(CLIP<int32>(mouse.x, 0, 639), 479 - CLIP<int32>(mouse.y, 0, 479));
+	_cursor->setPosition(CLIP<int32>(mouse.x, 0, 639) + _interface->camera().position().x - 320, 479 - CLIP<int32>(mouse.y, 0, 479));
 }
 
 void TesoroEngine::updateInterface() {
@@ -436,12 +476,18 @@ void TesoroEngine::handleEvent(const Common::Event &event) {
 			_speechSkipped = true;
 		} else if (_menuShown && event.type == Common::EVENT_LBUTTONDOWN) {
 			_menuClick = true;
-		} else if (_inputEnabled && _currentScene &&
-		           (event.type == Common::EVENT_LBUTTONDOWN || event.type == Common::EVENT_RBUTTONDOWN)) {
-			if (event.type == Common::EVENT_LBUTTONDOWN)
-				_leftClick = true;
-			else
+		} else if (_inputEnabled && _currentScene && event.type == Common::EVENT_RBUTTONDOWN) {
+			// The right button opens and closes the inventory.
+			_toggleInventory = true;
+		} else if (event.type == Common::EVENT_LBUTTONUP) {
+			_lastLeftRelease = _system->getMillis();
+		} else if (_inputEnabled && _currentScene && event.type == Common::EVENT_LBUTTONDOWN) {
+			// A second press within 200 ms of the release is a double click, which objects answer
+			// through their other click (a door takes Jim through at once).
+			if (_lastLeftRelease && _system->getMillis() - _lastLeftRelease <= 200)
 				_rightClick = true;
+			else
+				_leftClick = true;
 			_clickAt = event.mouse;
 		}
 		return;
@@ -535,21 +581,25 @@ void TesoroEngine::draw() {
 	if(_state == kAdventure && _currentScene) {
 		Common::Array<SceneSprite> sprites;
 		_currentScene->appendSprites(_gameTime, _randomSource, sprites);
+		_renderer.draw(*_screen->surfacePtr(), sprites);
 		if (_interface) {
-			// The interface is in front of the whole room. The shade behind the verb bar is a shadow:
-			// it darkens the room and sits behind the icons; the pointer is in front of everything.
+			// The interface is drawn over the whole room, with the depths of its own objects: the shade
+			// behind the verb bar (a shadow) darkens the room and the page but not the icons or the items,
+			// and the pointer is in front of everything.
 			Common::Array<SceneSprite> interfaceSprites;
 			_interface->appendSprites(_gameTime, _randomSource, interfaceSprites);
+			Common::Array<SceneSprite> visible;
 			for (uint i = 0; i < interfaceSprites.size(); ++i) {
 				SceneSprite &sprite = interfaceSprites[i];
 				const bool pointer = sprite.image == _cursor->image();
 				if (pointer && !_inputEnabled && !_menuShown)
 					continue;
-				sprite.depth = pointer ? 0 : sprite.image->kind == 2 ? 2 : 1;
-				sprites.push_back(sprite);
+				if (pointer)
+					sprite.depth = 0;
+				visible.push_back(sprite);
 			}
+			_renderer.draw(*_screen->surfacePtr(), visible, false);
 		}
-		_renderer.draw(*_screen->surfacePtr(), sprites);
 		if (_menuShown && _font)
 			drawMenu();
 		if (_showHotspots)
@@ -644,6 +694,7 @@ void TesoroEngine::startAdventure() {
 	_inputEnabled = true;
 	_inputAfterSpeech = false;
 	_menuShown = _menuSession = false;
+	_toggleInventory = false;
 	_scripts.clear();
 	_scenes.clear();
 	_probeScene = nullptr;
@@ -705,6 +756,9 @@ void TesoroEngine::stopAdventure() {
 	_interface.reset();
 	_interfaceProbe.reset();
 	_cursor = nullptr;
+	_control = nullptr;
+	_heldItem = nullptr;
+	_inventoryOpen = false;
 	_pointerText.clear();
 	if (_probeScene) {
 		_probeScene->removeObject(_probe.get());

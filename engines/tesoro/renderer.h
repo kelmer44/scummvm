@@ -45,7 +45,8 @@ struct MenuLayout {
 class SceneRenderer {
 public:
 	SceneRenderer();
-	void draw(Graphics::Surface &surface, const Common::Array<SceneSprite> &sprites);
+	// With `clear` off the sprites are drawn over what is on the surface, each pass with its own depths.
+	void draw(Graphics::Surface &surface, const Common::Array<SceneSprite> &sprites, bool clear = true);
 
 	// A dialogue menu: the choices are laid out from y = 50 in lines 18 pixels apart, each starting 30
 	// below the last line of the one before, and the block is moved down so that the last line of
