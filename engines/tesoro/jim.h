@@ -46,7 +46,7 @@ public:
 	void turn(int direction, uint32 now) override { look(ScriptOp::Direction(direction), now); }
 
 	// Walks in a straight line to a point. The waiter, if any, is resumed on arrival or immediately if the room has no floor.
-	void startWalk(int32 x, int32 y, Script *waiter, uint32 now);
+	void startWalk(int32 x, int32 y, ActionWaiter *waiter, uint32 now);
 
 	bool isWalking() const { return _walking; }
 
@@ -81,7 +81,7 @@ private:
 
 	bool _walking = false;
 	bool _walkFlag = false; // set when a walk begins and cleared when he turns
-	Script *_waiter = nullptr;
+	ActionWaiter *_waiter = nullptr;
 	int32 _fixedX = 0, _fixedY = 0;
 	int32 _targetX = 0, _targetY = 0;
 	int32 _lastMoveX = 0, _lastMoveY = 0;

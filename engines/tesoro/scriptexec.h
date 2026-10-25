@@ -62,7 +62,7 @@ public:
 };
 
 // One started script block. It runs until an op has to wait, and update resumes it.
-class Script {
+class Script : public ActionWaiter {
 public:
 	Script(ScriptHost &host, const ScriptBlock &block, uint64 labelId, uint8 *variables, Scene &scene);
 
@@ -70,7 +70,7 @@ public:
 	void start();
 	void update();
 	// The object the script is waiting on has finished its action (a walk).
-	void actionDone();
+	void actionDone() override;
 
 	// The scene that the script's objects are looked up in, and the scene of its sendmessage lines
 	// that name no other one. Native code moves a script to another scene with setScene.

@@ -48,7 +48,7 @@ namespace Tesoro {
 
 struct TesoroGameDescription;
 
-class TesoroEngine : public Engine, public ScriptHost {
+class TesoroEngine : public Engine, public ScriptHost, public PointerHost {
 private:
 	const ADGameDescription *_gameDescription;
 	Common::RandomSource _randomSource;
@@ -78,6 +78,12 @@ private:
 	// pointer can pick.
 	Common::SharedPtr<PointerProbe> _probe;
 	Scene *_probeScene = nullptr;
+	// What the pointer is over: the objects that were hovered on the last frame, the text that
+	// shows their name, and the buttons pressed since the last frame.
+	Common::Array<SceneObject *> _hovered;
+	Common::String _pointerText;
+	bool _leftClick = false, _rightClick = false;
+	Common::Point _clickAt;
 
 	ScriptLibrary _library;
 	Common::Array<Common::SharedPtr<Script>> _scripts;
@@ -133,6 +139,19 @@ private:
 	void worldPoint(const Common::Point &mouse, int32 &x, int32 &y) const;
 	// Keeps the probe in the current scene and puts it on the mouse.
 	void updateProbe();
+	// Draws the hit boxes and outlines of the objects and the probe.
+	void drawHotspots();
+	bool _showHotspots = false;
+	// Reacts to the objects that the probe overlapped on the last frame (hover, click). A click
+	// that no object takes is a click on the ground.
+	void updatePointer();
+	void clearPointer();
+
+	// PointerHost
+	void setPointerText(const Common::String &text) override { _pointerText = text; }
+	const TextEntry *findText(const Common::String &name) const override;
+	void walkJim(int32 x, int32 y, ActionWaiter *waiter) override;
+	void turnJim(int direction) override;
 	void draw();
 	void update();
 
@@ -146,6 +165,10 @@ public:
 public:
 	TesoroEngine(OSystem *syst, const ADGameDescription *gameDesc);
 	~TesoroEngine() override;
+
+	// The hotspot debug layer; only the console switches it.
+	bool showHotspots() const { return _showHotspots; }
+	void setShowHotspots(bool show) { _showHotspots = show; }
 
 	uint32 getFeatures() const;
 

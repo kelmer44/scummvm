@@ -89,6 +89,28 @@ struct SceneSprite {
 };
 
 
+// Whoever waits for a walk to end: a script or an object that Jim was sent to.
+class ActionWaiter {
+public:
+	virtual ~ActionWaiter() {}
+	virtual void actionDone() = 0;
+};
+
+struct TextEntry;
+
+// What the pointer's reactions need from the rest of the game.
+class PointerHost {
+public:
+	virtual ~PointerHost() {}
+	virtual void setPointerText(const Common::String &text) = 0;
+	// The text of the dialogue tables with this name, if there is one.
+	virtual const TextEntry *findText(const Common::String &name) const = 0;
+	// Sends Jim to a point; the waiter is told when he gets there.
+	virtual void walkJim(int32 x, int32 y, ActionWaiter *waiter) = 0;
+	// Turns Jim to a direction (1 up, 2 down, 3 left, 4 right).
+	virtual void turnJim(int direction) = 0;
+};
+
 /**
  * Everything in a room derives from SceneObject, which holds one AnimationPlayer per animation bank and handles talking.
  */
@@ -169,6 +191,18 @@ public:
 	// Makes the position that the object was moved to the one it is drawn at.
 	virtual void commitPosition() {}
 
+	/**
+	 * How the pointer reacts to the object once the probe overlaps it. Each returns 0 when the
+	 * object did nothing about it, 1 when it took it (so that the click is not a click on the
+	 * ground) and 3 when the frame's input is over. Only selectable objects are ever asked.
+	 */
+	virtual bool hitTest() const { return true; }
+	virtual int onHover(PointerHost &host) { return 0; }
+	virtual void onUnhover(PointerHost &host) {}
+	virtual int onLeftClick(PointerHost &host, int frame) { return 0; }
+	virtual int onRightClick(PointerHost &host, int frame) { return onLeftClick(host, frame); }
+	const Common::String &name() const { return _name; }
+
 	// The group of the scene that the object belongs to.
 	uint group() const { return _group; }
 	void setGroup(uint group) { _group = group; }
@@ -234,6 +268,7 @@ private:
 	SceneBounds _hitBounds;
 	uint _group = 0;
 	Common::Array<int16> _outline; // the frame's floor points as x, y pairs
+	Common::String _name;
 
 protected:
 	OverlapBody _overlap;
@@ -261,10 +296,30 @@ struct SceneMessage {
 };
 
 // Kinds 6, 9, 12, 13, 17 and 20: objects the player can interact with.
-class InteractiveObject : public SceneObject {
+class InteractiveObject : public SceneObject, public ActionWaiter {
 public:
 	InteractiveObject(const SceneObjectRecord &record, const SceneGroup &group, const SceneData &scene, uint32 now, uint parameterOffset = 0);
 	bool sprite(const SceneView &view, SceneSprite &sprite) const override;
+
+	// Hovering shows the object's name; a click sends Jim to its approach point, and when he
+	// gets there he turns to the object and the verb of the click runs.
+	int onHover(PointerHost &host) override;
+	void onUnhover(PointerHost &host) override;
+	int onLeftClick(PointerHost &host, int frame) override;
+	void actionDone() override;
+
+protected:
+	// What the object does for a verb (the pointer's frame when it was clicked). Returns the
+	// same codes as onLeftClick.
+	virtual int runVerb(int verb);
+
+private:
+	int32 _approachX = 0, _approachY = 0;
+	int _approachDirection = 1;     // 1 up, 2 down, 3 left, 4 right
+	Common::String _textName;       // its name in the dialogue tables, if it has one
+	Common::String _verbTexts[7];   // the lines that its verbs answer with
+	PointerHost *_host = nullptr;   // who sent Jim
+	int _verb = 0;
 };
 
 // Kind 5: the characters of the game.
@@ -308,6 +363,13 @@ public:
 
 private:
 	Common::Array<SceneObject *> _candidates;
+};
+
+// What the hotspot debug layer draws for an object: its hit box and outline on the screen.
+struct SceneDebugShape {
+	const SceneObject *object = nullptr;
+	Common::Rect box;
+	Common::Array<Common::Point> outline;
 };
 
 // A loaded scene owns every object in its LVL. Kinds without a SceneObject subclass
@@ -359,6 +421,10 @@ public:
 	 * delivered to the first object of the pair. Finally the moved objects commit their positions.
 	 */
 	void resolveOverlaps(uint32 now);
+
+	// The hit box and outline of every collidable, active object as the last frame's overlap tests
+	// saw them, on the screen.
+	void debugShapes(Common::Array<SceneDebugShape> &shapes) const;
 
 	// The floor that the room names, if it has one.
 	const FloorObject *floor() const { return _floor; }

@@ -20,6 +20,7 @@
  */
 
 #include "tesoro/scene.h"
+#include "tesoro/script.h"
 
 namespace Tesoro {
 namespace {
@@ -159,7 +160,7 @@ bool findRoomEntry(const SceneData &scene, RoomEntry &entry) {
 
 SceneObject::SceneObject(const SceneObjectRecord &record, const SceneGroup &group, const SceneData &scene)
 	: _kind(record.kind), _nameId(encodeName(record.name)), _x(record.x), _y(record.y),
-	  _depth(uint16(record.depth + group.depthBase + 5)) {
+	  _depth(uint16(record.depth + group.depthBase + 5)), _name(record.name) {
 	for (uint i = 0; i < record.bankIndices.size(); ++i) {
 		uint index = record.bankIndices[i];
 		if (index >= scene.banks.size())
@@ -354,6 +355,59 @@ InteractiveObject::InteractiveObject(const SceneObjectRecord &record, const Scen
 	}
 	// 0x40 is set by the original too; its meaning is not known yet.
 	addFlags(kGrouped | kCollidable | kSelectable | 0x40);
+
+	// Where Jim stands to use the object and which way he faces, the name it has in the dialogue
+	// tables (empty for none) and the lines its verbs answer with, six of 12 bytes each from 0x13 on.
+	const Bytes &p = record.parameters;
+	const uint base = parameterOffset;
+	auto string = [&](uint at) {
+		Common::String text;
+		for (uint i = at; i < at + 12 && i < p.size() && p[i]; ++i)
+			text += char(p[i]);
+		return text;
+	};
+	if (p.size() >= base + 7) {
+		_approachX = add(record.x, int16(p[base + 2] | (p[base + 3] << 8)));
+		_approachY = add(record.y, int16(p[base + 4] | (p[base + 5] << 8)));
+		_approachDirection = p[base + 6] + 1;
+		_textName = string(base + 7);
+		static const uint kVerbOfText[6] = {0, 1, 3, 4, 5, 2};
+		for (uint k = 0; k < 6; ++k)
+			_verbTexts[kVerbOfText[k]] = string(base + 0x13 + 12 * k);
+	}
+}
+
+int InteractiveObject::onHover(PointerHost &host) {
+	// The text the object has in the dialogue tables, else its name in the scene file.
+	const TextEntry *entry = _textName.empty() ? nullptr : host.findText(_textName);
+	host.setPointerText(entry ? entry->text : name());
+	return 1;
+}
+
+void InteractiveObject::onUnhover(PointerHost &host) {
+	host.setPointerText(Common::String());
+}
+
+int InteractiveObject::onLeftClick(PointerHost &host, int frame) {
+	_verb = frame;
+	_host = &host;
+	host.walkJim(_approachX, _approachY, this);
+	return 1;
+}
+
+void InteractiveObject::actionDone() {
+	// Jim has arrived: he turns to the object and the verb runs.
+	if (!_host)
+		return;
+	_host->turnJim(_approachDirection);
+	runVerb(_verb);
+}
+
+int InteractiveObject::runVerb(int verb) {
+	// The default answers of the original's verbs (the lines in _verbTexts) and the objects that
+	// override them are not ported yet.
+	warning("Tesoro: verb %d of %s does nothing yet.", verb, name().c_str());
+	return 0;
 }
 
 bool InteractiveObject::sprite(const SceneView &view, SceneSprite &sprite) const {
@@ -681,6 +735,31 @@ void Scene::queuePair(SceneObject &first, SceneObject &second) {
 	         (pair.overlap == _pairs[at].overlap && int16(pair.priority) < int16(_pairs[at].priority))))
 		++at;
 	_pairs.insert_at(at, pair);
+}
+
+void Scene::debugShapes(Common::Array<SceneDebugShape> &shapes) const {
+	for (uint g = 0; g < _groups.size(); ++g) {
+		const SceneView view = _camera.groupView(_groups[g].parallax);
+		auto toScreen = [&](int32 worldX, int32 worldY) {
+			return Common::Point(subtract(add(worldX, 320), view.x), subtract(add(240, view.y), worldY));
+		};
+		for (uint i = 0; i < _groups[g].objects.size(); ++i) {
+			const SceneObject &object = *_groups[g].objects[i];
+			const uint32 flags = object.flags();
+			if (!(flags & SceneObject::kCollidable) || !(flags & SceneObject::kActive))
+				continue;
+			const OverlapBody &body = object.overlapBody();
+			SceneDebugShape shape;
+			shape.object = &object;
+			const Common::Point topLeft = toScreen(add(body.fromX, body.box[0]), add(body.fromY, body.box[1]));
+			const Common::Point bottomRight = toScreen(add(body.fromX, body.box[2]), add(body.fromY, body.box[3]));
+			shape.box = Common::Rect(topLeft.x, topLeft.y, bottomRight.x + 1, bottomRight.y + 1);
+			for (uint p = 0; p < body.polygon.count; ++p)
+				shape.outline.push_back(toScreen(add(body.x, body.polygon.points[p * 2]),
+				                                 add(body.y, body.polygon.points[p * 2 + 1])));
+			shapes.push_back(shape);
+		}
+	}
 }
 
 void Scene::resolveOverlaps(uint32 now) {

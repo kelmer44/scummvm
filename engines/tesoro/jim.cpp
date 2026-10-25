@@ -131,7 +131,7 @@ void JimObject::look(ScriptOp::Direction direction, uint32 now) {
 	play(kIdleBank, now, direction - 1, direction - 1, false);
 }
 
-void JimObject::startWalk(int32 x, int32 y, Script *waiter, uint32 now) {
+void JimObject::startWalk(int32 x, int32 y, ActionWaiter *waiter, uint32 now) {
 	_walking = false;
 	if (!_scene || !_scene->floor()) {
 		// Without a floor he does not walk, and the script that waits for him goes on.
@@ -192,7 +192,7 @@ void JimObject::update(uint32 now) {
 		if (_waiter) {
 			// The script goes on, after he turns to face the way that he walked. His scale
 			// is not refreshed on this frame.
-			Script *waiter = _waiter;
+			ActionWaiter *waiter = _waiter;
 			_waiter = nullptr;
 			look(_direction, now);
 			waiter->actionDone();

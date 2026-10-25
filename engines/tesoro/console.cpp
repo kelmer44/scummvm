@@ -20,14 +20,35 @@
  */
 
 #include "tesoro/console.h"
+#include "tesoro/tesoro.h"
 
 namespace Tesoro {
 
 Console::Console() : GUI::Debugger() {
 	registerCmd("test",   WRAP_METHOD(Console, Cmd_test));
+	registerCmd("hotspots", WRAP_METHOD(Console, Cmd_hotspots));
 }
 
 Console::~Console() {
+}
+
+// Draws the hit boxes and outlines of the objects over the scene: hotspots [on|off]
+bool Console::Cmd_hotspots(int argc, const char **argv) {
+	bool show = !g_engine->showHotspots();
+	if (argc > 1) {
+		const Common::String arg(argv[1]);
+		if (arg == "on")
+			show = true;
+		else if (arg == "off")
+			show = false;
+		else {
+			debugPrintf("Usage: hotspots [on|off]\n");
+			return true;
+		}
+	}
+	g_engine->setShowHotspots(show);
+	debugPrintf("Hotspot layer %s\n", show ? "on" : "off");
+	return true;
 }
 
 bool Console::Cmd_test(int argc, const char **argv) {

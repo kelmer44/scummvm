@@ -93,6 +93,8 @@ Common::SharedPtr<Scene> TesoroEngine::loadScene(const Common::String &name) {
 
 void TesoroEngine::placeJim(const Common::SharedPtr<Scene> &scene, int32 x, int32 y) {
 	_jim->leave();
+	_hovered.clear();
+	_pointerText.clear();
 	scene->addObject(_jim, 0);
 	_jim->place(*scene, x, y, _gameTime);
 	scene->camera().setPosition(x, y);
@@ -210,6 +212,94 @@ void TesoroEngine::worldPoint(const Common::Point &mouse, int32 &x, int32 &y) co
 	y = camera.y - screenY;
 }
 
+const TextEntry *TesoroEngine::findText(const Common::String &name) const {
+	return _library.findText(encodeName(name));
+}
+
+void TesoroEngine::walkJim(int32 x, int32 y, ActionWaiter *waiter) {
+	_jim->startWalk(x, y, waiter, _gameTime);
+}
+
+void TesoroEngine::turnJim(int direction) {
+	_jim->look(ScriptOp::Direction(direction), _gameTime);
+}
+
+void TesoroEngine::clearPointer() {
+	_hovered.clear();
+	_pointerText.clear();
+	_leftClick = _rightClick = false;
+}
+
+void TesoroEngine::updatePointer() {
+	// The objects that the probe overlapped on the last frame, nearest first, are asked in turn
+	// until one takes the pointer. One that was not hovered before is only hovered now.
+	const Common::Array<SceneObject *> &candidates = _probe->candidates();
+	Common::Array<SceneObject *> before = _hovered;
+	_hovered.clear();
+	int result = 0;
+	for (uint i = 0; i < candidates.size() && result == 0; ++i) {
+		SceneObject *object = candidates[i];
+		uint wasAt = 0;
+		while (wasAt < before.size() && before[wasAt] != object)
+			++wasAt;
+		if (wasAt == before.size()) {
+			if (object->hitTest()) {
+				_hovered.push_back(object);
+				result = object->onHover(*this);
+			}
+		} else {
+			if (_leftClick)
+				result = object->onLeftClick(*this, 0);
+			else if (_rightClick)
+				result = object->onRightClick(*this, 0);
+			else
+				result = object->onHover(*this);
+			if (result == 3)
+				break;
+			_hovered.push_back(object);
+			before.remove_at(wasAt);
+		}
+	}
+	for (uint i = 0; i < before.size(); ++i)
+		before[i]->onUnhover(*this);
+	if (_hovered.empty())
+		_pointerText.clear();
+
+	// A click that nothing took is a click on the ground.
+	if (_leftClick && result == 0 && _currentScene)
+		clickWalk(_clickAt);
+	_leftClick = _rightClick = false;
+}
+
+void TesoroEngine::drawHotspots() {
+	Graphics::Surface &surface = *_screen->surfacePtr();
+	const Graphics::PixelFormat &format = surface.format;
+	const uint32 green = format.ARGBToColor(255, 0, 255, 0), yellow = format.ARGBToColor(255, 255, 255, 0);
+	const uint32 cyan = format.ARGBToColor(255, 0, 255, 255), magenta = format.ARGBToColor(255, 255, 0, 255);
+	const uint32 red = format.ARGBToColor(255, 255, 0, 0);
+
+	Common::Array<SceneDebugShape> shapes;
+	_currentScene->debugShapes(shapes);
+	const Common::Array<SceneObject *> &candidates = _probe->candidates();
+	for (uint i = 0; i < shapes.size(); ++i) {
+		const SceneDebugShape &shape = shapes[i];
+		// Yellow: what the probe overlapped on the last frame. Cyan: Jim. Green: the rest.
+		bool candidate = false;
+		for (uint c = 0; c < candidates.size(); ++c)
+			candidate |= candidates[c] == shape.object;
+		const uint32 colour = candidate ? yellow : shape.object->overlapBody().isJim ? cyan : green;
+		surface.frameRect(shape.box, colour);
+		// The outline of the frame, when it has one, closed.
+		for (uint p = 0; p + 1 < shape.outline.size(); ++p)
+			surface.drawLine(shape.outline[p].x, shape.outline[p].y,
+			                 shape.outline[p + 1].x, shape.outline[p + 1].y, magenta);
+	}
+	// The probe is where the mouse is.
+	const Common::Point mouse = _eventMan->getMousePos();
+	surface.drawLine(mouse.x - 6, mouse.y, mouse.x + 6, mouse.y, red);
+	surface.drawLine(mouse.x, mouse.y - 6, mouse.x, mouse.y + 6, red);
+}
+
 void TesoroEngine::updateProbe() {
 	if (!_currentScene)
 		return;
@@ -249,8 +339,13 @@ void TesoroEngine::handleEvent(const Common::Event &event) {
 		           (event.type == Common::EVENT_KEYDOWN && event.kbd.keycode == Common::KEYCODE_SPACE))) {
 			_mixer->stopHandle(_speech);
 			_speechSkipped = true;
-		} else if (_inputEnabled && _currentScene && event.type == Common::EVENT_LBUTTONDOWN) {
-			clickWalk(event.mouse);
+		} else if (_inputEnabled && _currentScene &&
+		           (event.type == Common::EVENT_LBUTTONDOWN || event.type == Common::EVENT_RBUTTONDOWN)) {
+			if (event.type == Common::EVENT_LBUTTONDOWN)
+				_leftClick = true;
+			else
+				_rightClick = true;
+			_clickAt = event.mouse;
 		}
 		return;
 	}
@@ -344,6 +439,8 @@ void TesoroEngine::draw() {
 		Common::Array<SceneSprite> sprites;
 		_currentScene->appendSprites(_gameTime, _randomSource, sprites);
 		_renderer.draw(*_screen->surfacePtr(), sprites);
+		if (_showHotspots)
+			drawHotspots();
 		if (_speaking && _talker && _font && (ConfMan.getBool("subtitles") || ConfMan.getBool("speech_mute"))) {
 			if (_narration) {
 				_renderer.drawNarration(*_screen->surfacePtr(), *_font, _subtitle, _talker->narrationColour());
@@ -353,6 +450,11 @@ void TesoroEngine::draw() {
 				_talker->speechAnchor(_currentScene->camera().groupView(_talker->parallax()), x, y);
 				_renderer.drawText(*_screen->surfacePtr(), *_font, _subtitle, _talker->speechColour(), x, y, _talker->speechWidth());
 			}
+		}
+		// The name of what the pointer is over is shown above it, 37 pixels up, in white.
+		if (_inputEnabled && !_pointerText.empty() && _font) {
+			const Common::Point mouse = _eventMan->getMousePos();
+			_renderer.drawText(*_screen->surfacePtr(), *_font, _pointerText, 0xffff, mouse.x, mouse.y - 37, 200);
 		}
 	}
 	else if (_state != kStartupMovie && _state != kNewGameMovie && _state != kAdventureMovie) {
@@ -403,8 +505,12 @@ void TesoroEngine::update() {
 			_jim->update(_gameTime);
 		updateSpeech();
 		if (_currentScene) {
-			if (_inputEnabled)
+			if (_inputEnabled) {
+				updatePointer();
 				updateProbe();
+			} else {
+				clearPointer();
+			}
 			_currentScene->resolveOverlaps(_gameTime);
 		}
 		updateScripts();
@@ -439,6 +545,8 @@ void TesoroEngine::startAdventure() {
 }
 
 void TesoroEngine::stopAdventure() {
+	_hovered.clear();
+	_pointerText.clear();
 	if (_probeScene) {
 		_probeScene->removeObject(_probe.get());
 		_probeScene = nullptr;
