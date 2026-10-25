@@ -57,13 +57,17 @@ public:
 	void update(uint32 now);
 
 	// Makes the position set by the last update the one that is drawn.
-	void commitPosition();
+	void commitPosition() override;
 
 	bool sprite(const SceneView &view, SceneSprite &sprite) const override;
 	bool backSprite(const SceneView &view, SceneSprite &sprite) const override;
 	void speechAnchor(const SceneView &view, int32 &outX, int32 &outY) const override;
 
 protected:
+	void pendingPosition(int32 &x, int32 &y) const override { x = _pendingX; y = _pendingY; }
+	// The hit box of his frame is scaled with him.
+	void adjustBox(int32 box[4]) const override;
+	bool isPlayer() const override { return true; }
 	void selectTalkBank(uint32 now) override;
 	// While he walks, or has just arrived and not yet turned, he shows his walking bank.
 	bool showsTalk() const override { return SceneObject::showsTalk() && !_walkFlag; }

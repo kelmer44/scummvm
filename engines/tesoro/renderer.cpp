@@ -50,8 +50,9 @@ void SceneRenderer::draw(Graphics::Surface &surface, const Common::Array<SceneSp
 	assert(surface.w == 640 && surface.h == 480 && surface.format.bytesPerPixel == 4);
 	surface.fillRect(Common::Rect(640, 480), 0xff000000); // paint surface black
 	Common::fill(_depth.begin(), _depth.end(), 0x10000U); // initialize depth buffer with maximum depth value
+
 	for (uint i = 0; i < sprites.size(); ++i) {
-		const SceneSprite &sprite = sprites[i];
+		const SceneSprite &sprite = sprites[i]; // get current sprite
 		if (sprite.scale)
 			continue; // scaled sprites are composed after the others
 		const Image &image = *sprite.image;
@@ -65,7 +66,7 @@ void SceneRenderer::draw(Graphics::Surface &surface, const Common::Array<SceneSp
 			int x = sprite.x;
 			// Each run of drawn pixels is expanded as it is drawn.
 			for (uint s = image.rowStart[imageRow]; s < image.rowStart[imageRow + 1]; ++s) {
-				const ImageSpan &span = image.spans[s];
+				const ImageSpan &span = image.spans[s]; // expands image span (skip count + pixel count) into the final row
 				x += span.skip;
 				for (uint k = 0; k < span.count; ++k, ++x) {
 					if (x < 0 || x >= 640)

@@ -6,6 +6,7 @@ MODULE_OBJS = \
 	console.o \
 	jim.o \
 	metaengine.o \
+	overlap.o \
 	renderer.o \
 	resources.o \
 	scene.o \

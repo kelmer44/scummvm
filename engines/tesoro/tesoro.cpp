@@ -113,6 +113,7 @@ void TesoroEngine::init() {
 	for (uint i = 0; i < JimObject::bankCount(); ++i)
 		jimBanks.push_back(Common::SharedPtr<Animation>(new Animation(readAnimation(_archive.read(JimObject::bankName(i))))));
 	_jim.reset(new JimObject(jimBanks));
+	_probe.reset(new PointerProbe());
 	_font.reset(new Animation(readAnimation(_archive.read("FUENTES.ANM"))));
 	// Temporary pointer until the original interface cursor is ported.
 	uint32 cursor[12 * 18] = {};
@@ -194,11 +195,37 @@ void TesoroEngine::setInputEnabled(bool enabled) {
 
 void TesoroEngine::clickWalk(const Common::Point &mouse) {
 	// The pointer is measured from the middle of the screen, y downwards, and limited to the screen.
+	int32 x, y;
+	worldPoint(mouse, x, y);
+	// Nothing in the room answers clicks yet, so every click is a click on the ground.
+	_jim->startWalk(x, y, nullptr, _gameTime);
+}
+
+void TesoroEngine::worldPoint(const Common::Point &mouse, int32 &x, int32 &y) const {
+	// The pointer is measured from the middle of the screen, y downwards, and limited to the screen.
 	const int32 screenX = CLIP<int32>(mouse.x - 320, -320, 319);
 	const int32 screenY = CLIP<int32>(mouse.y - 240, -240, 239);
 	const SceneView &camera = _currentScene->camera().position();
-	// Nothing in the room answers clicks yet, so every click is a click on the ground.
-	_jim->startWalk(screenX + camera.x, camera.y - screenY, nullptr, _gameTime);
+	x = screenX + camera.x;
+	y = camera.y - screenY;
+}
+
+void TesoroEngine::updateProbe() {
+	if (!_currentScene)
+		return;
+	if (_probeScene != _currentScene.get()) {
+		if (_probeScene)
+			_probeScene->removeObject(_probe.get());
+		// The probe and Jim share the first group of a scene.
+		_currentScene->addObject(_probe, 0);
+		_probeScene = _currentScene.get();
+	}
+	// What was overlapped on the last frame has been used by now.
+	_probe->clearCandidates();
+	int32 x, y;
+	worldPoint(_eventMan->getMousePos(), x, y);
+	_probe->placeAt(x, y);
+	_currentScene->objectMoved(_probe.get());
 }
 
 void TesoroEngine::handleEvent(const Common::Event &event) {
@@ -375,7 +402,11 @@ void TesoroEngine::update() {
 		if (_jim->isWalking())
 			_jim->update(_gameTime);
 		updateSpeech();
-		_jim->commitPosition();
+		if (_currentScene) {
+			if (_inputEnabled)
+				updateProbe();
+			_currentScene->resolveOverlaps(_gameTime);
+		}
 		updateScripts();
 	}
 	else if (_state == kCensorship && int32(_system->getMillis() - _deadline) >= 0) {
@@ -390,6 +421,7 @@ void TesoroEngine::startAdventure() {
 	_inputEnabled = true;
 	_scripts.clear();
 	_scenes.clear();
+	_probeScene = nullptr;
 	_movieHold = false;
 	_gameTime = 0;
 	_lastHostTime = _system->getMillis();
@@ -407,6 +439,10 @@ void TesoroEngine::startAdventure() {
 }
 
 void TesoroEngine::stopAdventure() {
+	if (_probeScene) {
+		_probeScene->removeObject(_probe.get());
+		_probeScene = nullptr;
+	}
 	_scripts.clear();
 	_jim->leave();
 	_mixer->stopHandle(_speech);

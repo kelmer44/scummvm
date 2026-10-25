@@ -352,7 +352,8 @@ InteractiveObject::InteractiveObject(const SceneObjectRecord &record, const Scen
 		if (!play(0, now, first, int(first), false))
 			error("Tesoro: Invalid initial animation for %s.", record.name.c_str());
 	}
-	addFlags(kGrouped);
+	// 0x40 is set by the original too; its meaning is not known yet.
+	addFlags(kGrouped | kCollidable | kSelectable | 0x40);
 }
 
 bool InteractiveObject::sprite(const SceneView &view, SceneSprite &sprite) const {
@@ -394,7 +395,8 @@ FloorObject::FloorObject(const SceneObjectRecord &record, const SceneGroup &grou
 	Animation &bank = *scene.banks[record.bankIndices[0]];
 	bank.frames[first].dx = 0;
 	bank.frames[first].dy = 0;
-	addFlags(kGrouped);
+	// The floor is built on the same base as the interactive objects (0x40ecb0).
+	addFlags(kGrouped | kCollidable | kSelectable | 0x40);
 }
 
 int FloorObject::scaleAt(int32 x, int32 y) const {
@@ -497,6 +499,7 @@ Scene::Scene(const SceneData &scene, uint32 now) {
 			Common::SharedPtr<SceneObject> object(createObject(record, source, scene, now));
 			_objects.push_back(object);
 			object->setParallax(source.parallax);
+			object->setGroup(i);
 			if (!(object->flags() & SceneObject::kGrouped))
 				continue;
 			uint at = 0;
@@ -523,6 +526,7 @@ void Scene::addObject(const Common::SharedPtr<SceneObject> &object, uint group) 
 		error("Tesoro: The scene has no group %u.", group);
 	_objects.push_back(object);
 	object->setParallax(_groups[group].parallax);
+	object->setGroup(group);
 	Common::Array<Common::SharedPtr<SceneObject>> &list = _groups[group].objects;
 	uint at = 0;
 	while (at < list.size() && list[at]->x() >= object->x())
@@ -531,6 +535,16 @@ void Scene::addObject(const Common::SharedPtr<SceneObject> &object, uint group) 
 }
 
 void Scene::removeObject(SceneObject *object) {
+	for (uint i = 0; i < _moved.size(); ++i)
+		if (_moved[i] == object) {
+			_moved.remove_at(i);
+			break;
+		}
+	for (uint i = 0; i < _pairs.size();)
+		if (_pairs[i].first == object || _pairs[i].second == object)
+			_pairs.remove_at(i);
+		else
+			++i;
 	for (uint i = 0; i < _objects.size(); ++i)
 		if (_objects[i].get() == object) {
 			_objects.remove_at(i);
@@ -582,6 +596,142 @@ SceneObject *Scene::deliver(uint32 now, SceneObject *object, const char *name, c
 	}
 	}
 	return nullptr;
+}
+
+void SceneObject::updateOverlap(uint32 now) {
+	OverlapBody &body = _overlap;
+	body.x = _x;
+	body.y = _y;
+	body.depth = _depth;
+	body.isJim = isPlayer();
+	body.fromX = body.toX = _x;
+	body.fromY = body.toY = _y;
+	for (int i = 0; i < 4; ++i)
+		body.box[i] = 0;
+	body.polygon = OverlapPolygon();
+	if (_players.empty())
+		return;
+
+	// Where the object is before and after its animation advances: its position plus what the
+	// animation moves it by. If it was moved, it is going to be at the position it was moved to.
+	AnimationPlayer &player = *_players[_currentBank];
+	body.fromX = add(_x, player.state().movementX);
+	body.fromY = add(_y, player.state().movementY);
+	player.update(now);
+	int32 pendingX, pendingY;
+	pendingPosition(pendingX, pendingY);
+	body.toX = add(pendingX, player.state().movementX);
+	body.toY = add(pendingY, player.state().movementY);
+
+	const Frame *frame = player.currentFrame();
+	if (!frame)
+		return;
+	body.box[0] = frame->hitX;
+	body.box[1] = frame->hitY;
+	body.box[2] = add(frame->hitX, int16(frame->hitW));
+	body.box[3] = add(frame->hitY, -int32(int16(frame->hitH)));
+	adjustBox(body.box);
+
+	// Frames of types 2 and 4 carry an outline; the others have none.
+	if (frame->type == 2 && !frame->pathPoints.empty()) {
+		body.polygon = OverlapPolygon::fromPoints(reinterpret_cast<const int16 *>(frame->pathPoints.data()),
+		                                          frame->pathPoints.size());
+	} else if (frame->type == 4 && !frame->floorPoints.empty()) {
+		_outline.resize(frame->floorPoints.size() * 2);
+		for (uint i = 0; i < frame->floorPoints.size(); ++i) {
+			_outline[i * 2] = frame->floorPoints[i].x;
+			_outline[i * 2 + 1] = frame->floorPoints[i].y;
+		}
+		body.polygon = OverlapPolygon::fromPoints(_outline.data(), frame->floorPoints.size());
+	}
+}
+
+PointerProbe::PointerProbe()
+	: SceneObject(0xfffe, encodeName("PUNTERO"), Common::Array<Common::SharedPtr<Animation>>(), 0, 0, 0) {
+	addFlags(kShown | kCollidable);
+}
+
+void PointerProbe::updateOverlap(uint32) {
+	// The probe is a point: no box, no outline, and it jumps to where it is put.
+	OverlapBody &body = _overlap;
+	body = OverlapBody();
+	body.x = body.fromX = body.toX = x();
+	body.y = body.fromY = body.toY = y();
+	body.depth = depth();
+}
+
+void Scene::objectMoved(SceneObject *object) {
+	if (!(object->flags() & SceneObject::kCollidable))
+		return;
+	for (uint i = 0; i < _moved.size(); ++i)
+		if (_moved[i] == object)
+			return;
+	_moved.push_back(object);
+}
+
+void Scene::queuePair(SceneObject &first, SceneObject &second) {
+	OverlapResult result;
+	if (!testOverlap(first.overlapBody(), second.overlapBody(), result))
+		return;
+	// Kept in order of contact, then of depth; a pair equal to one that is queued goes after it.
+	OverlapPair pair = {&first, &second, result.overlap, result.priority};
+	uint at = 0;
+	while (at < _pairs.size() &&
+	       !(pair.overlap < _pairs[at].overlap ||
+	         (pair.overlap == _pairs[at].overlap && int16(pair.priority) < int16(_pairs[at].priority))))
+		++at;
+	_pairs.insert_at(at, pair);
+}
+
+void Scene::resolveOverlaps(uint32 now) {
+	_pairs.clear();
+
+	// What the moved objects and their neighbours are made of this frame.
+	Common::Array<SceneObject *> prepared;
+	auto prepare = [&](SceneObject *object) {
+		for (uint i = 0; i < prepared.size(); ++i)
+			if (prepared[i] == object)
+				return;
+		prepared.push_back(object);
+		object->updateOverlap(now);
+	};
+	for (uint i = 0; i < _moved.size(); ++i)
+		prepare(_moved[i]);
+	for (uint i = 0; i < _moved.size(); ++i) {
+		const Common::Array<Common::SharedPtr<SceneObject>> &list = _groups[_moved[i]->group()].objects;
+		for (uint j = 0; j < list.size(); ++j) {
+			const uint32 flags = list[j]->flags();
+			if ((flags & SceneObject::kCollidable) && (flags & SceneObject::kActive))
+				prepare(list[j].get());
+		}
+	}
+
+	for (uint i = 0; i < _moved.size(); ++i) {
+		SceneObject &object = *_moved[i];
+		if (!(object.flags() & SceneObject::kCollidable))
+			continue;
+		const Common::Array<Common::SharedPtr<SceneObject>> &list = _groups[object.group()].objects;
+		for (uint j = 0; j < list.size(); ++j) {
+			SceneObject &other = *list[j];
+			const uint32 flags = other.flags();
+			if (&other == &object || !(flags & SceneObject::kCollidable) || !(flags & SceneObject::kActive))
+				continue;
+			if (object.inFront(other))
+				queuePair(object, other);
+			else if (other.inFront(object))
+				queuePair(other, object);
+		}
+	}
+
+	// Delivering a pair can move or remove objects, so work from a copy.
+	Common::Array<OverlapPair> pairs = _pairs;
+	_pairs.clear();
+	for (uint i = 0; i < pairs.size(); ++i)
+		pairs[i].first->onOverlap(*pairs[i].second, pairs[i].overlap);
+
+	for (uint i = 0; i < _moved.size(); ++i)
+		_moved[i]->commitPosition();
+	_moved.clear();
 }
 
 void Scene::appendSprites(uint32 now, Common::RandomSource &random, Common::Array<SceneSprite> &sprites) {

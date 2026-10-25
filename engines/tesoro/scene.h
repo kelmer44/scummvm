@@ -24,6 +24,7 @@
 
 #include "common/random.h"
 #include "tesoro/animation.h"
+#include "tesoro/overlap.h"
 #include "tesoro/resources.h"
 
 namespace Tesoro {
@@ -93,7 +94,9 @@ struct SceneSprite {
  */
 class SceneObject {
 public:
-	enum Flags { kActive = 2, kShown = 4, kHasAnimation = 16, kGrouped = 0x100 };
+	// kCollidable objects are tested against each other when one of them moves; kSelectable ones
+	// are the objects that the pointer can pick.
+	enum Flags { kActive = 2, kShown = 4, kCollidable = 8, kHasAnimation = 16, kGrouped = 0x100, kSelectable = 0x400 };
 	virtual ~SceneObject() {}
 
 	void setActive(bool active);
@@ -151,6 +154,25 @@ public:
 	// Turns the object to face a direction (1 up, 2 down, 3 left, 4 right).
 	virtual void turn(int direction, uint32 now);
 
+	// When a collidable object moves, the scene tests it against the collidable objects of its
+	// group. If this object is "in front" of the other one the pair is tested with this one as
+	// the first, else if the other is in front of this one with the other first. Whatever
+	// the first object of a pair overlaps is told through onOverlap, nearest contact first.
+	virtual bool inFront(const SceneObject &other) const { return false; }
+	virtual void onOverlap(SceneObject &other, int32 overlap) {}
+
+	// Works out what the overlap tests need for this frame: the hit box and outline of the
+	// frame, and where the object was and is going to be.
+	virtual void updateOverlap(uint32 now);
+	const OverlapBody &overlapBody() const { return _overlap; }
+
+	// Makes the position that the object was moved to the one it is drawn at.
+	virtual void commitPosition() {}
+
+	// The group of the scene that the object belongs to.
+	uint group() const { return _group; }
+	void setGroup(uint group) { _group = group; }
+
 	// A source of random numbers for the objects' mouths.
 
 	// True while the selected bank is still playing an animation.
@@ -184,6 +206,12 @@ protected:
 	uint selectedBank() const { return _currentBank; }
 	void moveTo(int32 x, int32 y) { _x = x; _y = y; }
 
+	// Where the object is going to be drawn once its position is committed.
+	virtual void pendingPosition(int32 &x, int32 &y) const { x = _x; y = _y; }
+	// Lets an object change the hit box of its frame (Jim's follows his scale).
+	virtual void adjustBox(int32 box[4]) const {}
+	virtual bool isPlayer() const { return false; }
+
 private:
 	SceneObject(const SceneObject &) = delete;
 	SceneObject &operator=(const SceneObject &) = delete;
@@ -204,6 +232,11 @@ private:
 	uint16 _depth;
 	int32 _parallax = 300;
 	SceneBounds _hitBounds;
+	uint _group = 0;
+	Common::Array<int16> _outline; // the frame's floor points as x, y pairs
+
+protected:
+	OverlapBody _overlap;
 };
 
 // Kind 3: backgrounds and ambient animation.
@@ -256,6 +289,27 @@ public:
 	int scaleAt(int32 x, int32 y) const;
 };
 
+/**
+ * The pointer's probe, a point that follows the mouse. When it is moved the scene tests it against
+ * the selectable objects of its group; the ones that it overlaps become the candidates that the
+ * pointer reacts to (hover, click) on the following frame.
+ */
+class PointerProbe : public SceneObject {
+public:
+	PointerProbe();
+	// Puts the probe on a point of the world.
+	void placeAt(int32 x, int32 y) { moveTo(x, y); }
+	void clearCandidates() { _candidates.clear(); }
+	const Common::Array<SceneObject *> &candidates() const { return _candidates; }
+
+	bool inFront(const SceneObject &other) const override { return (other.flags() & kSelectable) != 0; }
+	void onOverlap(SceneObject &other, int32) override { _candidates.push_back(&other); }
+	void updateOverlap(uint32 now) override;
+
+private:
+	Common::Array<SceneObject *> _candidates;
+};
+
 // A loaded scene owns every object in its LVL. Kinds without a SceneObject subclass
 // yet are built as inert placeholders (with a warning) so nothing is silently dropped.
 class Scene {
@@ -294,6 +348,18 @@ public:
 	void addObject(const Common::SharedPtr<SceneObject> &object, uint group);
 	void removeObject(SceneObject *object);
 
+	// Tells the scene that a collidable object moved this frame. It is tested against the
+	// others by the next resolveOverlaps.
+	void objectMoved(SceneObject *object);
+
+	/**
+	 * The end of the scene's frame. Every object that moved and the collidable objects of its group
+	 * are prepared; each moved object is paired with the collidable, active objects of its group,
+	 * the pairs that touch are queued by how far along their movement they touch, and each is
+	 * delivered to the first object of the pair. Finally the moved objects commit their positions.
+	 */
+	void resolveOverlaps(uint32 now);
+
 	// The floor that the room names, if it has one.
 	const FloorObject *floor() const { return _floor; }
 
@@ -308,6 +374,16 @@ private:
 	const FloorObject *_floor = nullptr;
 	SceneCamera _camera;
 	RoomEntry _entry;
+
+	// The pair queue: the first object touched the second at `overlap` (in 65536ths).
+	struct OverlapPair {
+		SceneObject *first, *second;
+		int32 overlap;
+		uint16 priority;
+	};
+	Common::Array<SceneObject *> _moved;
+	Common::Array<OverlapPair> _pairs;
+	void queuePair(SceneObject &first, SceneObject &second);
 
 	SceneObject *deliver(uint32 now, SceneObject *object, const char *name, const SceneMessage &message);
 	SceneObject *createObject(const SceneObjectRecord &record, const SceneGroup &group,  const SceneData &scene, uint32 now);

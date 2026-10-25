@@ -35,12 +35,13 @@ class SceneRenderer {
 public:
 	SceneRenderer();
 	void draw(Graphics::Surface &surface, const Common::Array<SceneSprite> &sprites);
+
 	// Text that the whole screen is the stage for, centred on the screen.
 	void drawNarration(Graphics::Surface &surface, const Animation &font, const Common::String &text, uint16 colour);
+
 	// Lays text out in lines no wider than maxWidth, centres the block on (centreX, y) and
 	// keeps it on the screen. A lineHeight of 0 is one and a half times the font's height.
-	void drawText(Graphics::Surface &surface, const Animation &font, const Common::String &text, uint16 colour,
-	              int centreX, int y, int maxWidth, int lineHeight = 0);
+	void drawText(Graphics::Surface &surface, const Animation &font, const Common::String &text, uint16 colour, int centreX, int y, int maxWidth, int lineHeight = 0);
 
 private:
 	void drawScaled(Graphics::Surface &surface, const SceneSprite &sprite);

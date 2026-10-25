@@ -61,6 +61,12 @@ JimObject::JimObject(const Common::Array<Common::SharedPtr<Animation>> &banks)
 	config.banks.push_back(8);
 	setTalkConfig(config);
 	look(ScriptOp::kLeft, 0);
+	addFlags(kCollidable | kSelectable);
+}
+
+void JimObject::adjustBox(int32 box[4]) const {
+	for (int i = 0; i < 4; ++i)
+		box[i] = int32(uint32(box[i]) * uint32(_scale)) >> 8;
 }
 
 int JimObject::floorScale() const {
@@ -210,6 +216,8 @@ void JimObject::update(uint32 now) {
 	_pendingX = x;
 	_pendingY = y;
 	_moved = true;
+	if (_scene)
+		_scene->objectMoved(this);
 	_scale = floorScale();
 }
 

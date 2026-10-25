@@ -74,6 +74,10 @@ private:
 	Common::HashMap<Common::String, Common::SharedPtr<Scene>> _scenes;
 	Common::SharedPtr<Scene> _currentScene;
 	Common::SharedPtr<JimObject> _jim;
+	// The pointer's probe and the scene that it is in. Whatever it overlaps each frame is what the
+	// pointer can pick.
+	Common::SharedPtr<PointerProbe> _probe;
+	Scene *_probeScene = nullptr;
 
 	ScriptLibrary _library;
 	Common::Array<Common::SharedPtr<Script>> _scripts;
@@ -125,6 +129,10 @@ private:
 	void handleEvent(const Common::Event &event);
 	// A left click on the ground sends Jim walking to that point.
 	void clickWalk(const Common::Point &mouse);
+	// Where a point of the screen is in the world of the current scene.
+	void worldPoint(const Common::Point &mouse, int32 &x, int32 &y) const;
+	// Keeps the probe in the current scene and puts it on the mouse.
+	void updateProbe();
 	void draw();
 	void update();
 
