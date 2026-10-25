@@ -90,6 +90,16 @@ private:
 	Common::Array<SceneObject *> _interfaceHovered;
 	CursorObject *_cursor = nullptr;
 	bool _leftClick = false, _rightClick = false;
+	// A menu of choices that a script is showing (_menuShown: a script asked for it on this frame; _menuSession: from the
+	// first menu of a conversation until its scripts end, during which the pointer is the arrow): the lines (as laid out on the last frame), where
+	// each choice starts on the screen, how far the block was moved down, the one under the pointer,
+	// and whether the player has clicked since the last frame.
+	bool _menuShown = false, _menuSession = false, _menuClick = false;
+	Common::Array<Common::String> _menuChoices;
+	MenuLayout _menuLayout;
+	int _menuHovered = -1, _menuSavedVerb = 0;
+	void placeCursor();
+	void drawMenu();
 	Common::Point _clickAt;
 
 	ScriptLibrary _library;
@@ -132,6 +142,8 @@ private:
 	void startSpeech(SceneObject *speaker, const TextEntry &text, int option) override;
 	bool isSpeaking(SceneObject *speaker) const override;
 	int pickDialogueChoice(const Common::Array<const TextEntry *> &choices) override;
+	SceneObject *player() override { return _jim.get(); }
+	void dialogueChoiceDone() override;
 	void startMovie(uint number) override;
 	bool isMovieFinished() const override { return _state != kAdventureMovie; }
 	void playSound(const Common::String &name) override;

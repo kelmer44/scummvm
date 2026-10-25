@@ -80,7 +80,7 @@ struct ScriptOp {
 	// kSpeech: speaker 0 is the player character, otherwise a 1-based participant.
 	const TextEntry *text = nullptr;
 	int speaker = 0;
-	int option = 1;
+	int option = 0;  // which of the speaker's talking banks shows the speech
 
 	// kSleep: milliseconds. kMovie: movie number. kMusic: CD track.
 	// kNative: ordinal of the DO in its block. kAssign and kIf: the comparison value.

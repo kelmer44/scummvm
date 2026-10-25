@@ -111,6 +111,28 @@ void SceneRenderer::draw(Graphics::Surface &surface, const Common::Array<SceneSp
 		drawScaled(surface, *scaled[i]);
 }
 
+MenuLayout SceneRenderer::layoutMenu(Graphics::Surface &surface, const Animation &font, const Common::Array<Common::String> &choices) {
+	MenuLayout layout;
+	int y = 50;
+	for (uint i = 0; i < choices.size(); ++i) {
+		layout.starts.push_back(y);
+		int last;
+		drawText(surface, font, choices[i], 0xffff, 320, y, 640, 18, false, 0, &last, false);
+		y = last + 30;
+	}
+	layout.starts.push_back(480);
+	layout.shift = 465 - y;
+	return layout;
+}
+
+void SceneRenderer::drawMenu(Graphics::Surface &surface, const Animation &font, const Common::Array<Common::String> &choices,
+                             const MenuLayout &layout, int hovered) {
+	for (uint i = 0; i < choices.size(); ++i)
+		drawText(surface, font, choices[i], 0xffff, 320, layout.starts[i], 640, 18, false, layout.shift);
+	if (hovered >= 0 && uint(hovered) < choices.size())
+		drawText(surface, font, choices[hovered], 0xffe0, 320, layout.starts[hovered] + layout.shift, 640, 18, false);
+}
+
 void SceneRenderer::setShadowTable(const Bytes &table) {
 	if (table.size() != 0x8000)
 		error("Tesoro: The shadow table has the wrong size.");
@@ -218,7 +240,8 @@ void SceneRenderer::drawNarration(Graphics::Surface &surface, const Animation &f
 }
 
 void SceneRenderer::drawText(Graphics::Surface &surface, const Animation &font, const Common::String &text,
-                             uint16 colour, int centreX, int y, int maxWidth, int lineHeight) {
+                             uint16 colour, int centreX, int y, int maxWidth, int lineHeight,
+                             bool centreVertically, int shift, int *lastLineY, bool draw) {
 	if (!font.isFont || font.frames.size() <= 94)
 		error("Tesoro: Invalid font.");
 	const Frame &space = font.frames[94];
@@ -266,23 +289,30 @@ void SceneRenderer::drawText(Graphics::Surface &surface, const Animation &font, 
 	}
 	// The block is centred on y, then kept between the first and the last line of the screen.
 	const int count = lines.size();
-	const int top = y - (count * lineHeight) / 2;
+	const int top = centreVertically ? y - (count * lineHeight) / 2 : y;
 	if (lineHeight > top)
 		y = lineHeight;
 	else if (480 - lineHeight < count * lineHeight + top)
 		y = 480 - (count + 1) * lineHeight;
 	else
 		y = top;
+	if (lastLineY)
+		*lastLineY = y + (count - 1) * lineHeight;
+	if (!draw)
+		return;
+	y += shift;
 	const uint32 tint = rgb565ToArgb(colour);
 	for (uint line = 0; line < lines.size(); ++line, y += lineHeight) {
 		int lineWidth = 0;
 		for (uint i = 0; i < lines[line].size(); ++i)
 			lineWidth += advance(byte(lines[line][i]));
-		int x = centreX - lineWidth / 2;
+		// Text that is not centred is placed as if every line were as wide as the box.
+		const int boxWidth = centreVertically ? lineWidth : maxWidth;
+		int x = centreX - boxWidth / 2;
 		if (x < margin)
 			x = margin;
-		else if (640 - margin < centreX + lineWidth / 2)
-			x = 640 - margin - lineWidth;
+		else if (640 - margin < centreX + boxWidth / 2)
+			x = 640 - margin - boxWidth;
 		for (uint i = 0; i < lines[line].size(); ++i) {
 			int glyph = int(byte(lines[line][i])) - 33;
 			if (glyph < 0 || uint(glyph) >= font.frames.size())

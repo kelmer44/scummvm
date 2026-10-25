@@ -246,12 +246,13 @@ void Script::update() {
 			_chosen = _host.pickDialogueChoice(_choices);
 			if (_chosen < 0)
 				return;
-			// The player's character says the chosen line before the script goes on.
-			_host.startSpeech(nullptr, *_choices[_chosen], 0);
+			// Jim says the chosen line before the script goes on.
+			_host.startSpeech(_host.player(), *_choices[_chosen], 0);
 			return;
 		}
-		if (_host.isSpeaking(nullptr))
+		if (_host.isSpeaking(_host.player()))
 			return;
+		_host.dialogueChoiceDone();
 		_pc = _choiceTargets[_chosen];
 		_chosen = -1;
 		break;

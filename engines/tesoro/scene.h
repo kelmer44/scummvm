@@ -180,7 +180,7 @@ public:
 
 	// Starts talking: the object keeps the animation it had, shows its talking bank, and moves
 	// its mouth if mouthMoves. It goes on showing the closed mouth until restoreAnimation.
-	void beginSpeech(uint32 now, bool mouthMoves);
+	void beginSpeech(uint32 now, bool mouthMoves, int option = 0);
 	void endSpeech() { _speaking = false; }
 	bool isSpeaking() const { return _speaking; }
 
@@ -289,6 +289,7 @@ private:
 	TalkConfig _talk;
 	bool _talkable = false;
 	bool _speaking = false, _mouthMoves = false;
+	int _talkOption = 0;   // which of the talking banks the speech uses
 	bool _animationSaved = false; // the object is showing a talking bank
 	uint _savedBank = 0;
 	uint32 _savedFlags = 0, _lastMouthChange = 0;

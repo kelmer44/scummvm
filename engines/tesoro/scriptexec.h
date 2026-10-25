@@ -46,7 +46,11 @@ public:
 	// A speaker of null is the narrator.
 	virtual void startSpeech(SceneObject *speaker, const TextEntry &text, int option) = 0;
 	virtual bool isSpeaking(SceneObject *speaker) const = 0;
+	// Shows the choices of a menu until the player picks one; returns -1 while they have not.
 	virtual int pickDialogueChoice(const Common::Array<const TextEntry *> &choices) = 0;
+	// The player's character, who says the chosen line, and the end of the menu.
+	virtual SceneObject *player() = 0;
+	virtual void dialogueChoiceDone() = 0;
 
 	virtual void startMovie(uint number) = 0;
 	virtual bool isMovieFinished() const = 0;

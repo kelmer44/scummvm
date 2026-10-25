@@ -222,7 +222,7 @@ void TesoroEngine::turnJim(int direction) {
 }
 
 void TesoroEngine::jimSays(const TextEntry &text) {
-	startSpeech(_jim.get(), text, 1);
+	startSpeech(_jim.get(), text, 0);
 	setInputEnabled(false);
 	_inputAfterSpeech = true;
 }
@@ -347,13 +347,19 @@ void TesoroEngine::loadInterface() {
 	_interfaceHovered.clear();
 }
 
-void TesoroEngine::updateInterface() {
-	if (!_interface)
+void TesoroEngine::placeCursor() {
+	if (!_cursor)
 		return;
 	// The pointer in the interface's world: x to the right, y upwards, from the corner of the screen.
 	const Common::Point mouse = _eventMan->getMousePos();
-	const int32 x = CLIP<int32>(mouse.x, 0, 639), y = 479 - CLIP<int32>(mouse.y, 0, 479);
-	_cursor->setPosition(x, y);
+	_cursor->setPosition(CLIP<int32>(mouse.x, 0, 639), 479 - CLIP<int32>(mouse.y, 0, 479));
+}
+
+void TesoroEngine::updateInterface() {
+	if (!_interface)
+		return;
+	placeCursor();
+	const int32 x = _cursor->x(), y = _cursor->y();
 	_interfaceProbe->clearCandidates();
 	_interfaceProbe->placeAt(x, y);
 	_interface->objectMoved(_interfaceProbe.get());
@@ -428,6 +434,8 @@ void TesoroEngine::handleEvent(const Common::Event &event) {
 		           (event.type == Common::EVENT_KEYDOWN && event.kbd.keycode == Common::KEYCODE_SPACE))) {
 			_mixer->stopHandle(_speech);
 			_speechSkipped = true;
+		} else if (_menuShown && event.type == Common::EVENT_LBUTTONDOWN) {
+			_menuClick = true;
 		} else if (_inputEnabled && _currentScene &&
 		           (event.type == Common::EVENT_LBUTTONDOWN || event.type == Common::EVENT_RBUTTONDOWN)) {
 			if (event.type == Common::EVENT_LBUTTONDOWN)
@@ -535,13 +543,15 @@ void TesoroEngine::draw() {
 			for (uint i = 0; i < interfaceSprites.size(); ++i) {
 				SceneSprite &sprite = interfaceSprites[i];
 				const bool pointer = sprite.image == _cursor->image();
-				if (pointer && !_inputEnabled)
+				if (pointer && !_inputEnabled && !_menuShown)
 					continue;
 				sprite.depth = pointer ? 0 : sprite.image->kind == 2 ? 2 : 1;
 				sprites.push_back(sprite);
 			}
 		}
 		_renderer.draw(*_screen->surfacePtr(), sprites);
+		if (_menuShown && _font)
+			drawMenu();
 		if (_showHotspots)
 			drawHotspots();
 		if (_speaking && _talker && _font && (ConfMan.getBool("subtitles") || ConfMan.getBool("speech_mute"))) {
@@ -633,6 +643,7 @@ void TesoroEngine::startAdventure() {
 	memset(_variables, 0, sizeof(_variables));
 	_inputEnabled = true;
 	_inputAfterSpeech = false;
+	_menuShown = _menuSession = false;
 	_scripts.clear();
 	_scenes.clear();
 	_probeScene = nullptr;
@@ -711,13 +722,26 @@ void TesoroEngine::stopAdventure() {
 }
 
 void TesoroEngine::updateScripts() {
-	for (uint i = 0; i < _scripts.size(); ++i)
-		_scripts[i]->update();
+	// A script that shows a menu says so again on every frame.
+	_menuShown = false;
+	// The most recent script goes first, and a script that is still waiting after its update holds
+	// back the older ones: the script that started it (a sub-conversation, say) resumes when it ends.
+	for (int i = int(_scripts.size()) - 1; i >= 0; --i) {
+		Common::SharedPtr<Script> script = _scripts[i];
+		script->update();
+		if (!script->finished())
+			break;
+	}
 	for (uint i = 0; i < _scripts.size();) {
 		if (_scripts[i]->finished())
 			_scripts.remove_at(i);
 		else
 			++i;
+	}
+	if (_menuSession && _scripts.empty()) {
+		// The conversation is over: the verb that was chosen before it comes back.
+		_menuSession = false;
+		setVerb(_menuSavedVerb);
 	}
 }
 
@@ -771,7 +795,7 @@ void TesoroEngine::startSpeech(SceneObject *speaker, const TextEntry &text, int 
 		error("Tesoro: %s cannot talk.", text.name.c_str());
 	_mixer->stopHandle(_speech);
 	Audio::SeekableAudioStream *audio = openWav(text.name + ".WAV");
-	talker->beginSpeech(_gameTime, speaker != nullptr);
+	talker->beginSpeech(_gameTime, speaker != nullptr, option);
 	_talker = talker;
 	_narration = speaker == nullptr;
 	_subtitle = text.text;
@@ -790,7 +814,48 @@ bool TesoroEngine::isSpeaking(SceneObject *speaker) const {
 }
 
 int TesoroEngine::pickDialogueChoice(const Common::Array<const TextEntry *> &choices) {
-	error("Tesoro: Dialogue choices are not implemented.");
+	if (!_font)
+		error("Tesoro: A menu needs the font.");
+	_menuShown = true;
+	if (!_menuSession) {
+		// The pointer is the arrow throughout the conversation; the verb comes back when it ends.
+		_menuSession = true;
+		_menuClick = false;
+		_pointerText.clear();
+		_menuSavedVerb = _cursor ? _cursor->verb() : 0;
+		setVerb(0);
+	}
+	placeCursor();
+	_menuChoices.clear();
+	for (uint i = 0; i < choices.size(); ++i)
+		_menuChoices.push_back(choices[i]->text);
+	// A choice answers to the pointer from where it starts to where the next one does (the last
+	// one down to the bottom edge of the screen).
+	_menuLayout = _renderer.layoutMenu(*_screen->surfacePtr(), *_font, _menuChoices);
+
+	const int mouseY = CLIP<int>(_eventMan->getMousePos().y, 0, 479);
+	_menuHovered = -1;
+	for (uint i = 0; i < choices.size(); ++i)
+		if (_menuLayout.top(i) <= mouseY && mouseY < _menuLayout.bottom(i))
+			_menuHovered = i;
+	if (_menuHovered >= 0 && _menuClick) {
+		const int chosen = _menuHovered;
+		_menuClick = false;
+		_menuShown = false;
+		_menuHovered = -1;
+		_menuChoices.clear();
+		return chosen;
+	}
+	_menuClick = false;
+	return -1;
+}
+
+void TesoroEngine::dialogueChoiceDone() {
+	// The next menu of the conversation, if there is one, keeps the arrow; see updateScripts.
+}
+
+void TesoroEngine::drawMenu() {
+	_renderer.drawMenu(*_screen->surfacePtr(), *_font, _menuChoices, _menuLayout, _menuHovered);
 }
 
 void TesoroEngine::startMovie(uint number) {

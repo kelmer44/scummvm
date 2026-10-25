@@ -31,10 +31,28 @@ namespace Tesoro {
 // store are left alone. E.g. menus
 void drawImage(Graphics::Surface &surface, const Image &image, int x, int y);
 
+// Where the choices of a dialogue menu go on the screen.
+struct MenuLayout {
+	// The y that each choice starts at (one more entry: the bottom of the screen) before the block
+	// is moved down by `shift`.
+	Common::Array<int> starts;
+	int shift = 0;
+	// The range of screen rows that choice `i` answers to the pointer in.
+	int top(uint i) const { return starts[i] + shift; }
+	int bottom(uint i) const { return starts[i + 1] + shift; }
+};
+
 class SceneRenderer {
 public:
 	SceneRenderer();
 	void draw(Graphics::Surface &surface, const Common::Array<SceneSprite> &sprites);
+
+	// A dialogue menu: the choices are laid out from y = 50 in lines 18 pixels apart, each starting 30
+	// below the last line of the one before, and the block is moved down so that the last line of
+	// the last choice ends at 435. Drawn in white; the one under the pointer is drawn again in yellow.
+	MenuLayout layoutMenu(Graphics::Surface &surface, const Animation &font, const Common::Array<Common::String> &choices);
+	void drawMenu(Graphics::Surface &surface, const Animation &font, const Common::Array<Common::String> &choices,
+	              const MenuLayout &layout, int hovered);
 
 	// The table that shadows darken the picture with (TABLA1.TBL): 32 levels of 512 RGB565
 	// colours each, indexed by three bits of each channel of the colour underneath.
@@ -43,9 +61,11 @@ public:
 	// Text that the whole screen is the stage for, centred on the screen.
 	void drawNarration(Graphics::Surface &surface, const Animation &font, const Common::String &text, uint16 colour);
 
-	// Lays text out in lines no wider than maxWidth, centres the block on (centreX, y) and
-	// keeps it on the screen. A lineHeight of 0 is one and a half times the font's height.
-	void drawText(Graphics::Surface &surface, const Animation &font, const Common::String &text, uint16 colour, int centreX, int y, int maxWidth, int lineHeight = 0);
+	// Lays text out in lines no wider than maxWidth, centres the block on (centreX, y) (or, if `centred` is off, starts
+	// it at y with the lines at the left edge of the box) and keeps it on the screen. The block is then moved down by
+	// `shift`; lastLineY gets the y of its last line before that, and with draw off nothing is drawn. A lineHeight of 0 is one and a half times the font's height.
+	void drawText(Graphics::Surface &surface, const Animation &font, const Common::String &text, uint16 colour, int centreX, int y, int maxWidth, int lineHeight = 0,
+	              bool centred = true, int shift = 0, int *lastLineY = nullptr, bool draw = true);
 
 private:
 	// Darkens whatever is behind a shadow image.

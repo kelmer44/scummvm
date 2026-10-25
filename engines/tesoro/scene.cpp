@@ -209,14 +209,16 @@ void SceneObject::turn(int, uint32) {
 void SceneObject::selectTalkBank(uint32 now) {
 	if (_talk.banks.empty())
 		return;
-	playBank(_talk.banks[0], now, 1, 1);
+	// The speech names which talking bank to use; one that the object does not have is bank 0.
+	playBank(uint(_talkOption) < _talk.banks.size() ? _talk.banks[_talkOption] : 0, now, 1, 1);
 }
 
-void SceneObject::beginSpeech(uint32 now, bool mouthMoves) {
+void SceneObject::beginSpeech(uint32 now, bool mouthMoves, int option) {
 	if (!_talkable)
 		error("Tesoro: An object that cannot talk is asked to.");
 	_speaking = true;
 	_mouthMoves = mouthMoves;
+	_talkOption = option;
 	if (!_animationSaved) {
 		// What it was showing is kept, frozen, until it is put back.
 		_animationSaved = true;
