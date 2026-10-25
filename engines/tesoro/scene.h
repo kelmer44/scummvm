@@ -242,6 +242,9 @@ protected:
 
 	// Where the object is going to be drawn once its position is committed.
 	virtual void pendingPosition(int32 &x, int32 &y) const { x = _x; y = _y; }
+	// Whether the animation's movement is dropped each time it advances, as the interactive objects
+	// of the original do (0x407770). Jim and scenery keep it.
+	virtual bool dropsMovement() const { return false; }
 	// Lets an object change the hit box of its frame (Jim's follows his scale).
 	virtual void adjustBox(int32 box[4]) const {}
 	virtual bool isPlayer() const { return false; }
@@ -300,6 +303,7 @@ class InteractiveObject : public SceneObject, public ActionWaiter {
 public:
 	InteractiveObject(const SceneObjectRecord &record, const SceneGroup &group, const SceneData &scene, uint32 now, uint parameterOffset = 0);
 	bool sprite(const SceneView &view, SceneSprite &sprite) const override;
+	bool dropsMovement() const override { return true; }
 
 	// Hovering shows the object's name; a click sends Jim to its approach point, and when he
 	// gets there he turns to the object and the verb of the click runs.
@@ -342,6 +346,7 @@ public:
 	            const SceneData &scene, uint32 now);
 	// The scale (256 is full size) of a character at a point of the room.
 	int scaleAt(int32 x, int32 y) const;
+	bool dropsMovement() const override { return true; }
 };
 
 /**

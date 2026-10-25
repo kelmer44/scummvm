@@ -271,6 +271,8 @@ void SceneObject::prepareFrame(uint32 now, Common::RandomSource &random) {
 		}
 	}
 	_players[_currentBank]->update(now);
+	if (dropsMovement())
+		_players[_currentBank]->clearMovement();
 	const Frame *frame = _players[_currentBank]->currentFrame();
 	if (!frame)
 		return;
@@ -672,6 +674,8 @@ void SceneObject::updateOverlap(uint32 now) {
 	body.fromX = add(_x, player.state().movementX);
 	body.fromY = add(_y, player.state().movementY);
 	player.update(now);
+	if (dropsMovement())
+		player.clearMovement();
 	int32 pendingX, pendingY;
 	pendingPosition(pendingX, pendingY);
 	body.toX = add(pendingX, player.state().movementX);

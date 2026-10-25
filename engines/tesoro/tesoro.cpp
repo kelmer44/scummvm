@@ -31,6 +31,7 @@
 #include "gui/message.h"
 
 #include "tesoro/tesoro.h"
+#include "tesoro/testing.h"
 #include "tesoro/detection.h"
 #include "tesoro/console.h"
 #include "graphics/framelimiter.h"
@@ -77,10 +78,6 @@ const char *const kSceneNames[] = {
 
 } // namespace
 
-// TEMPORARY, to speed up testing: skips the splash movie, the new game movie and the censorship
-// screen. They are meant to come from the original scripts; remove this when they do.
-static const bool kSkipStartupScreens = true;
-
 // How many times faster the game clock runs in fast mode (Ctrl+F).
 static const uint kFastModeFactor = 5;
 
@@ -125,7 +122,7 @@ void TesoroEngine::init() {
 	CursorMan.replaceCursor(cursor, 12, 18, 0, 0, 0, false, &_screen->format);
 
 	_state = kMainMenu;
-	if (!kSkipStartupScreens)
+	if (!TestingShortcuts::kSkipStartupScreens)
 		startMovie(0, kStartupMovie);
 	CursorMan.showMouse(_state == kMainMenu);
 }
@@ -376,7 +373,7 @@ void TesoroEngine::handleEvent(const Common::Event &event) {
 			continue;
 		switch (button.action) {
 		case 0:
-			if (kSkipStartupScreens) {
+			if (TestingShortcuts::kSkipStartupScreens) {
 				_state = kDifficultyMenu;
 				CursorMan.showMouse(true);
 				break;
@@ -531,6 +528,24 @@ void TesoroEngine::startAdventure() {
 	_movieHold = false;
 	_gameTime = 0;
 	_lastHostTime = _system->getMillis();
+	if (TestingShortcuts::kStartInOffice) {
+		// What the introduction leaves behind: the harbour's door active but hidden, the captain
+		// gone from the office and Jim at its door (native ordinal 5 and the end of FANPRESENT).
+		if (SceneObject *door = loadScene("PUERTO.LVL")->find("PUERTA1")) {
+			door->setActive(true);
+			door->show(false);
+		}
+		Common::SharedPtr<Scene> office = loadScene("DESPACHO.LVL");
+		if (SceneObject *captain = office->find("CAPITAN"))
+			captain->setActive(false);
+		placeJim(office, 550, 100);
+		_state = kAdventure;
+		_jim->setActive(true);
+		_jim->show(true);
+		_jim->look(ScriptOp::kLeft, _gameTime);
+		CursorMan.showMouse(true);
+		return;
+	}
 	// The game puts Jim at the floor's origin of the harbour, active and shown, before the script starts.
 	Common::SharedPtr<Scene> harbour = loadScene("PUERTO.LVL");
 	placeJim(harbour, harbour->entry().x, harbour->entry().y);

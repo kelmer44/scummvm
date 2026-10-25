@@ -49,6 +49,8 @@ public:
 	void resume(uint32 now);
 	// Puts back the flags that a player had when its state was saved (see pause).
 	void restoreFlags(uint32 flags) { _state.flags = flags; }
+	// Drops the movement that the animation has accumulated.
+	void clearMovement() { _state.movementX = _state.movementY = 0; }
 
 	const AnimationState &state() const { return _state; }
 	const Animation &animation() const { return _animation; }
