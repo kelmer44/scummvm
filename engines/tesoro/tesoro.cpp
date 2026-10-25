@@ -114,6 +114,7 @@ void TesoroEngine::init() {
 	_jim.reset(new JimObject(jimBanks));
 	_probe.reset(new PointerProbe());
 	_font.reset(new Animation(readAnimation(_archive.read("FUENTES.ANM"))));
+	_renderer.setShadowTable(_archive.read("TABLA1.TBL"));
 	// Temporary pointer until the original interface cursor is ported.
 	uint32 cursor[12 * 18] = {};
 	for (uint y = 0; y < 18; ++y)
@@ -489,18 +490,16 @@ void TesoroEngine::draw() {
 		Common::Array<SceneSprite> sprites;
 		_currentScene->appendSprites(_gameTime, _randomSource, sprites);
 		if (_interface) {
-			// The interface is in front of the whole room. The shade behind the verb bar is a shadow
-			// image, which cannot be composed yet, so it is left out; the pointer is in front of the bar.
+			// The interface is in front of the whole room. The shade behind the verb bar is a shadow:
+			// it darkens the room and sits behind the icons; the pointer is in front of everything.
 			Common::Array<SceneSprite> interfaceSprites;
 			_interface->appendSprites(_gameTime, _randomSource, interfaceSprites);
 			for (uint i = 0; i < interfaceSprites.size(); ++i) {
 				SceneSprite &sprite = interfaceSprites[i];
-				if (sprite.image->kind == 2)
-					continue;
 				const bool pointer = sprite.image == _cursor->image();
 				if (pointer && !_inputEnabled)
 					continue;
-				sprite.depth = pointer ? 0 : 1;
+				sprite.depth = pointer ? 0 : sprite.image->kind == 2 ? 2 : 1;
 				sprites.push_back(sprite);
 			}
 		}

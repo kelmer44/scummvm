@@ -36,6 +36,10 @@ public:
 	SceneRenderer();
 	void draw(Graphics::Surface &surface, const Common::Array<SceneSprite> &sprites);
 
+	// The table that shadows darken the picture with (TABLA1.TBL): 32 levels of 512 RGB565
+	// colours each, indexed by three bits of each channel of the colour underneath.
+	void setShadowTable(const Bytes &table);
+
 	// Text that the whole screen is the stage for, centred on the screen.
 	void drawNarration(Graphics::Surface &surface, const Animation &font, const Common::String &text, uint16 colour);
 
@@ -44,9 +48,13 @@ public:
 	void drawText(Graphics::Surface &surface, const Animation &font, const Common::String &text, uint16 colour, int centreX, int y, int maxWidth, int lineHeight = 0);
 
 private:
+	// Darkens whatever is behind a shadow image.
+	void drawShadow(Graphics::Surface &surface, const SceneSprite &sprite);
 	void drawScaled(Graphics::Surface &surface, const SceneSprite &sprite);
 
 	Common::Array<uint32> _depth;
+	Common::Array<uint16> _shadowTable;
+	Common::Array<bool> _shadowed; // the pixels that a shadow has already claimed
 };
 
 } // namespace Tesoro

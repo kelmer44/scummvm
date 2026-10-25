@@ -57,7 +57,7 @@ void SceneRenderer::draw(Graphics::Surface &surface, const Common::Array<SceneSp
 			continue; // scaled sprites are composed after the others
 		const Image &image = *sprite.image;
 		if (image.kind == 2)
-			error("Tesoro: Shadow composition is not implemented.");
+			continue; // shadows darken what has been drawn, once all of it has
 		const int top = MAX<int32>(0, sprite.y);
 		const int bottom = MIN<int64>(480, int64(sprite.y) + image.h);
 		for (int y = top; y < bottom; ++y) {
@@ -80,6 +80,23 @@ void SceneRenderer::draw(Graphics::Surface &surface, const Common::Array<SceneSp
 			}
 		}
 	}
+	// Shadows do not add up: where they overlap, only the nearest one counts (the first one
+	// submitted when they are as near), and it darkens whatever is behind it.
+	Common::Array<const SceneSprite *> shadows;
+	for (uint i = 0; i < sprites.size(); ++i) {
+		if (sprites[i].scale || sprites[i].image->kind != 2)
+			continue;
+		uint at = shadows.size();
+		while (at > 0 && shadows[at - 1]->depth > sprites[i].depth)
+			--at;
+		shadows.insert_at(at, &sprites[i]);
+	}
+	if (!shadows.empty()) {
+		_shadowed.resize(640 * 480);
+		Common::fill(_shadowed.begin(), _shadowed.end(), false);
+		for (uint i = 0; i < shadows.size(); ++i)
+			drawShadow(surface, *shadows[i]);
+	}
 	// Scaled sprites are drawn from the farthest to the nearest.
 	Common::Array<const SceneSprite *> scaled;
 	for (uint i = 0; i < sprites.size(); ++i) {
@@ -92,6 +109,48 @@ void SceneRenderer::draw(Graphics::Surface &surface, const Common::Array<SceneSp
 	}
 	for (uint i = 0; i < scaled.size(); ++i)
 		drawScaled(surface, *scaled[i]);
+}
+
+void SceneRenderer::setShadowTable(const Bytes &table) {
+	if (table.size() != 0x8000)
+		error("Tesoro: The shadow table has the wrong size.");
+	_shadowTable.resize(0x4000);
+	for (uint i = 0; i < _shadowTable.size(); ++i)
+		_shadowTable[i] = table[i * 2] | (table[i * 2 + 1] << 8);
+}
+
+void SceneRenderer::drawShadow(Graphics::Surface &surface, const SceneSprite &sprite) {
+	if (_shadowTable.empty())
+		error("Tesoro: A shadow is drawn without the shadow table.");
+	const Image &image = *sprite.image;
+	const int top = MAX<int32>(0, sprite.y);
+	const int bottom = MIN<int64>(480, int64(sprite.y) + image.h);
+	for (int y = top; y < bottom; ++y) {
+		uint32 *row = (uint32 *)surface.getBasePtr(0, y);
+		const uint imageRow = y - sprite.y;
+		int x = sprite.x;
+		for (uint s = image.rowStart[imageRow]; s < image.rowStart[imageRow + 1]; ++s) {
+			const ImageSpan &span = image.spans[s];
+			x += span.skip;
+			// The span's value picks the level: the table is entered 256 bytes further for each.
+			const uint level = uint(span.value & 0xffff) * 0x80;
+			for (uint k = 0; k < span.count; ++k, ++x) {
+				if (x < 0 || x >= 640)
+					continue;
+				if (_shadowed[y * 640 + x])
+					continue;
+				_shadowed[y * 640 + x] = true;
+				// What is in front of the shadow is not darkened; what is at its depth is.
+				if (_depth[y * 640 + x] < sprite.depth)
+					continue;
+				const uint32 pixel = row[x];
+				const uint index = level + (((pixel >> 13) & 7) << 6 | ((pixel >> 21) & 7) << 3 | ((pixel >> 5) & 7));
+				if (index >= _shadowTable.size())
+					error("Tesoro: A shadow level is outside the table.");
+				row[x] = rgb565ToArgb(_shadowTable[index]);
+			}
+		}
+	}
 }
 
 // Draws an image at a scale by picking source pixels in 16.16 fixed point: the rows by the
