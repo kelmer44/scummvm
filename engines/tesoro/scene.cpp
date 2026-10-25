@@ -518,7 +518,46 @@ int CharacterObject::runVerb(int verb) {
 		game.startObjectScript("FRECLUTADOR", "hablar", variables(), *scene());
 		return 1;
 	}
+	if (verb == 2 && _class == 2) {
+		// Dick: he behaves differently once Jim has the doubloon.
+		SceneObject *doubloon = game.interfaceScene()->find("IDOBLON");
+		if (!doubloon)
+			error("Tesoro: Dick needs the inventory.");
+		if (doubloon->isActive())
+			variables()[0] = 2;
+		game.startObjectScript("FDICKTABER", "hablar", variables(), *scene());
+		return 1;
+	}
+	if (verb == 2 && _class == 3) {
+		// The parrot.
+		game.startObjectScript("FLORO", "hablar", nullptr, *scene());
+		return 1;
+	}
+	if (verb == 2 && _class == 4) {
+		// Nudero: his conversation depends on the rope and the full jar that Jim has, and on how far the recruiter has got.
+		SceneObject *rope = game.interfaceScene()->find("ICUERDA");
+		SceneObject *jar = game.interfaceScene()->find("IJARRALLENA");
+		SceneObject *recruiter = game.levelScene(1)->find("RECLUTADOR");
+		SceneObject *fool = scene()->find("TONTO");
+		if (!rope || !jar || !recruiter || !recruiter->variables() || !fool || !fool->variables())
+			error("Tesoro: Nudero's conversation needs the inventory, the harbour and the tavern.");
+		variables()[1] = rope->isActive();
+		variables()[2] = jar->isActive();
+		if (!variables()[4])
+			variables()[4] = recruiter->variables()[11];
+		game.startObjectScript("FNUDERO", "hablar", variables(), *scene());
+		if (!fool->variables()[0])
+			fool->variables()[0] = 1;
+		return 1;
+	}
 	return InteractiveObject::runVerb(verb);
+}
+
+void CharacterObject::speechEnded() {
+	if (_class != 3)
+		return;
+	if (SceneObject *dick = scene()->find("DICK"))
+		dick->show(true);
 }
 
 int CharacterObject::itemUsed(int item) {
@@ -544,6 +583,39 @@ int CharacterObject::itemUsed(int item) {
 			variables()[0] = 6;
 		game.startObjectScript(item == 0 ? "FIBOLI" : item == 7 ? "FICNUDO" : "FIHLFDBLN", "reclutador",
 		                       item == 45 ? variables() : nullptr, *scene());
+		return 1;
+	}
+	if (_class == 2) {
+		// Dick answers to some items and ignores the rest.
+		const char *block = nullptr;
+		uint8 *vars = nullptr;
+		switch (item) {
+		case 0: block = "FIBOLI"; break;
+		case 3:
+			if (game.interfaceScene()->find("IDOBLON")->isActive())
+				variables()[0] = 2;
+			block = "FIJARRA";
+			vars = variables();
+			break;
+		case 5: block = "FIDOBLON"; vars = variables(); break;
+		case 45: block = "FIHLFDBLN"; break;
+		default: return 1;
+		}
+		game.startObjectScript(block, "dick", vars, *scene());
+		return 1;
+	}
+	if (_class == 4) {
+		// Nudero too.
+		const char *block = nullptr;
+		uint8 *vars = nullptr;
+		switch (item) {
+		case 0: block = "FIBOLI"; break;
+		case 4: block = "FIJARRALLENA"; vars = variables(); break;
+		case 5: block = "FIDOBLON"; break;
+		case 6: block = "FICUERDA"; vars = variables(); break;
+		default: return 1;
+		}
+		game.startObjectScript(block, "nudero", vars, *scene());
 		return 1;
 	}
 	return InteractiveObject::itemUsed(item);

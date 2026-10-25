@@ -189,6 +189,8 @@ public:
 	// its mouth if mouthMoves. It goes on showing the closed mouth until restoreAnimation.
 	void beginSpeech(uint32 now, bool mouthMoves, int option = 0);
 	void endSpeech() { _speaking = false; }
+	// What the object does once what it was saying has ended (or was skipped).
+	virtual void speechEnded() {}
 	bool isSpeaking() const { return _speaking; }
 
 	// Puts back the animation that the object had before it talked.
@@ -394,6 +396,8 @@ protected:
 	// Talking to the captain and to the recruiter starts their conversations; so does giving them an item.
 	int runVerb(int verb) override;
 	int itemUsed(int item) override;
+	// The parrot's words end with Dick coming into view.
+	void speechEnded() override;
 
 private:
 	uint _idleBank = 0;

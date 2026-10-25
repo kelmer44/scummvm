@@ -809,6 +809,8 @@ void TesoroEngine::updateSpeech() {
 		_subtitle.clear();
 		if (_talker)
 			_talker->endSpeech();
+		if (_talker)
+			_talker->speechEnded();
 		_talker = nullptr;
 	}
 }
