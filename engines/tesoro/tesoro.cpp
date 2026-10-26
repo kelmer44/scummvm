@@ -347,15 +347,25 @@ int TesoroEngine::jimLevel() const {
 	return -1;
 }
 
-void TesoroEngine::transferJim(Scene &destination, int32 x, int32 y, int direction) {
-	for (Common::HashMap<Common::String, Common::SharedPtr<Scene>>::iterator it = _scenes.begin(); it != _scenes.end(); ++it) {
-		if (it->_value.get() == &destination) {
-			Common::SharedPtr<Scene> scene = it->_value;
-			placeJim(scene, x, y);
+void TesoroEngine::transferJim(Scene &destination, int32 x, int32 y, int direction, bool fade, SceneObject *exitDoor) {
+	Common::SharedPtr<Scene> scene = sharedScene(destination);
+	if (!fade) {
+		placeJim(scene, x, y);
+		if (direction)
 			_jim->look(ScriptOp::Direction(direction), _gameTime);
-			return;
-		}
+		if (exitDoor)
+			exitDoor->arrivedThrough(*this);
+		return;
 	}
+	startTransition(scene, x, y, 4, 100, 300);
+	_transition.direction = direction;
+	_transition.exitDoor = exitDoor;
+}
+
+Common::SharedPtr<Scene> TesoroEngine::sharedScene(Scene &scene) {
+	for (Common::HashMap<Common::String, Common::SharedPtr<Scene>>::iterator it = _scenes.begin(); it != _scenes.end(); ++it)
+		if (it->_value.get() == &scene)
+			return it->_value;
 	error("Tesoro: Jim is sent to a scene that is not loaded.");
 }
 
@@ -578,6 +588,11 @@ Common::Error TesoroEngine::run() {
 }
 
 void TesoroEngine::draw() {
+	if (_state == kAdventure && _transition.active && !_transition.frame.empty()) {
+		drawTransition();
+		_screen->makeAllDirty();
+		return;
+	}
 	if(_state == kAdventure && _currentScene) {
 		Common::Array<SceneSprite> sprites;
 		_currentScene->appendSprites(_gameTime, _randomSource, sprites);
@@ -666,6 +681,7 @@ void TesoroEngine::update() {
 		if (_jim->isWalking())
 			_jim->update(_gameTime);
 		updateSpeech();
+		updateTransition();
 		if (_inputAfterSpeech && !_speaking) {
 			_inputAfterSpeech = false;
 			setInputEnabled(true);
@@ -695,6 +711,8 @@ void TesoroEngine::startAdventure() {
 	_inputAfterSpeech = false;
 	_menuShown = _menuSession = false;
 	_toggleInventory = false;
+	_transition = Transition();
+	_jimState = JimState();
 	_scripts.clear();
 	_scenes.clear();
 	_probeScene = nullptr;
@@ -930,6 +948,8 @@ void TesoroEngine::playMusic(uint track) {
 }
 
 void TesoroEngine::doNative(uint scriptType, uint ordinal, Script &script) {
+	if (runNative(scriptType, ordinal, script))
+		return;
 	if (scriptType == 1) {
 		switch (ordinal) {
 		case 0: // Jim is hidden and activated, and the view goes to him.

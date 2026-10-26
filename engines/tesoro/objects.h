@@ -33,6 +33,8 @@ public:
 
 	// A right click on a door puts Jim at it and uses it at once.
 	int onRightClick(PointerHost &host, int frame) override;
+	// Jim comes out of this door into its scene.
+	void arrivedThrough(PointerHost &host) override;
 	// Scripts use a door by running its default verb, which works only if the verb that the door
 	// was last clicked with was the default one.
 	int useFromScript(PointerHost &host);
@@ -41,6 +43,8 @@ protected:
 	int runVerb(int verb) override;
 
 private:
+	// What a class of door does when Jim comes out of it.
+	void arrival(PointerHost &host);
 	// What the default verb does for the class of door.
 	int useHandler();
 	// Takes Jim through the door, if the verb that the door was clicked with is the default one.
@@ -48,27 +52,36 @@ private:
 	// The door that the right click and the use of a door that can be locked work on.
 	int rightClick(PointerHost &host, int frame);
 
+	uint8 _scratch = 0;   // a one-byte block of variables that a script is started with
 	uint _class;
 	uint _destinationLevel = 0;     // the scene that the door leads to
 	uint64 _destinationName = 0;    // and the door in it where Jim comes out
 	int _arrivalDirection = 1;      // the way Jim faces there
 };
 
-// Kind 12: objects whose verbs start scripts of the game. What each does depends on its class (the
+// Kinds 12, 17 and 20: objects whose verbs start scripts of the game. What each does depends on its class (the
 // second byte of its record), which is shared by the objects of that class in every scene.
 class ScriptedObject : public InteractiveObject {
 public:
-	ScriptedObject(const SceneObjectRecord &record, const SceneGroup &group, const SceneData &scene, uint32 now, uint objectClass);
+	ScriptedObject(const SceneObjectRecord &record, const SceneGroup &group, const SceneData &scene, uint32 now, uint objectKind, uint objectClass);
 
 protected:
 	int runVerb(int verb) override;
+
+	int itemUsed(int item) override;
 
 private:
 	// Whether the captain of the office has his back to the room.
 	bool captainLooksAway(PointerHost &host) const;
 	void startScript(const char *block, const char *label, uint8 *variables);
+	int runKind12(int verb);
+	int runKind17(int verb);
+	int runKind20(int verb);
+	// Whether an inventory item is owned.
+	bool owned(const char *item) const;
 
-	uint _class;
+	uint _kind, _class;
+	uint8 _scratch = 0;   // a one-byte block of variables that a script is started with
 };
 
 // Kind 13: the items of the inventory (all in the interface scene). An item that is active is

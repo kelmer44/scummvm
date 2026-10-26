@@ -60,6 +60,8 @@ public:
 	// The native code behind DO lines, selected by the script type of the block. The script
 	// that runs it can be sent to another scene.
 	virtual void doNative(uint scriptType, uint ordinal, Script &script) = 0;
+	// A native action that takes time (a fade) is still going on; the script waits for it.
+	virtual bool nativeBusy() const = 0;
 	// Characters walk and turn; a walk ends by calling Script::actionDone.
 	virtual void walk(SceneObject &object, int x, int y, Script &waiter) = 0;
 	virtual void look(SceneObject &object, ScriptOp::Direction direction) = 0;
@@ -80,6 +82,8 @@ public:
 	// that name no other one. Native code moves a script to another scene with setScene.
 	Scene &scene() const { return *_scene; }
 	void setScene(Scene &scene) { _scene = &scene; }
+	// Looks the participants up again in the scene (native code does this when it moves the script).
+	void rebindParticipants();
 
 	bool finished() const { return _finished; }
 	const ScriptBlock &block() const { return _block; }

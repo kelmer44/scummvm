@@ -99,6 +99,15 @@ public:
 struct TextEntry;
 class Scene;
 
+// What the game keeps in Jim between scenes: a flag that says the story is in a scripted phase (doors then
+// behave differently), the number of the phase, and two more flags.
+struct JimState {
+	uint8 busy = 0;      // 0x110
+	uint8 phase = 0;     // 0x111
+	uint8 flag112 = 0;
+	uint8 flag113 = 0;
+};
+
 // What the pointer's reactions need from the rest of the game.
 class PointerHost {
 public:
@@ -121,8 +130,12 @@ public:
 	virtual Scene *interfaceScene() = 0;
 	// Starts the label of a script block with a block of variables (null for none) in a scene.
 	virtual void startObjectScript(const char *block, const char *label, uint8 *variables, Scene &scene) = 0;
-	// Moves Jim to a point of a scene, facing a direction (1 up, 2 down, 3 left, 4 right).
-	virtual void transferJim(Scene &scene, int32 x, int32 y, int direction) = 0;
+	// Moves Jim to a point of a scene, facing a direction (1 up, 2 down, 3 left, 4 right). With `fade`
+	// the screen fades to black first and Jim arrives 300 ms later; the door he comes out of is told.
+	virtual void transferJim(Scene &scene, int32 x, int32 y, int direction, bool fade = false, SceneObject *exitDoor = nullptr) = 0;
+	virtual JimState &jimState() = 0;
+	// A random number below n.
+	virtual uint randomBelow(uint n) = 0;
 	// The index of the scene that Jim is in.
 	virtual int jimLevel() const = 0;
 	// The inventory item in Jim's hand (null for none). Holding an item shows it as the pointer
@@ -161,6 +174,7 @@ public:
 	uint32 kind() const { return _kind; }
 	uint64 nameId() const { return _nameId; }
 	uint16 depth() const { return _depth; }
+	void setDepth(uint16 depth) { _depth = depth; }
 	int32 x() const { return _x; }
 	int32 y() const { return _y; }
 
@@ -228,6 +242,8 @@ public:
 	virtual void onUnhover(PointerHost &host) {}
 	virtual int onLeftClick(PointerHost &host, int frame) { return 0; }
 	virtual int onRightClick(PointerHost &host, int frame) { return onLeftClick(host, frame); }
+	// Jim has come out of this object (a door) into its scene.
+	virtual void arrivedThrough(PointerHost &host) {}
 	const Common::String &name() const { return _name; }
 
 	// The group of the scene that the object belongs to.

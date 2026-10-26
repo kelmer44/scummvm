@@ -7,6 +7,7 @@ MODULE_OBJS = \
 	interface.o \
 	jim.o \
 	metaengine.o \
+	natives.o \
 	objects.o \
 	overlap.o \
 	renderer.o \

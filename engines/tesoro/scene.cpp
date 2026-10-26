@@ -550,6 +550,31 @@ int CharacterObject::runVerb(int verb) {
 			fool->variables()[0] = 1;
 		return 1;
 	}
+	if (_class == 5 && verb == 2) {
+		// The fisherman.
+		game.startObjectScript("FPESCADOR", "hablar", variables(), *scene());
+		return 1;
+	}
+	if (_class == 6 && verb == 2) {
+		// The gambler: once Jim has the plate he can offer it.
+		SceneObject *plate = game.interfaceScene()->find("IPLATO");
+		if (!plate)
+			error("Tesoro: The gambler needs the inventory.");
+		if (!variables()[0] && plate->isActive() && !variables()[3])
+			variables()[3] = 1;
+		game.startObjectScript("FLUDOPATA", "hablar", variables(), *scene());
+		return 1;
+	}
+	if (_class == 7 && verb == 2) {
+		// Dick in the kitchen.
+		game.startObjectScript("FDICKCOCINA", "hablar", variables(), *scene());
+		return 1;
+	}
+	if (_class == 8 && (verb == 1 || verb == 2)) {
+		// The parrot that cooks.
+		game.startObjectScript("FLOROCOCINA", verb == 1 ? "mirar" : "hablar", variables(), *scene());
+		return 1;
+	}
 	return InteractiveObject::runVerb(verb);
 }
 
@@ -584,6 +609,25 @@ int CharacterObject::itemUsed(int item) {
 		game.startObjectScript(item == 0 ? "FIBOLI" : item == 7 ? "FICNUDO" : "FIHLFDBLN", "reclutador",
 		                       item == 45 ? variables() : nullptr, *scene());
 		return 1;
+	}
+	if (_class == 5 && (item == 11 || item == 17)) {
+		game.startObjectScript("FIGUSANO", "pescador", item == 17 ? variables() : nullptr, *scene());
+		return 1;
+	}
+	if (_class == 7 && item == 7) {
+		game.startObjectScript("FICNUDO", "dick", variables(), *scene());
+		return 1;
+	}
+	if (_class == 7 && item == 12) {
+		SceneObject *parrot = scene()->find("LOROPOCHO");
+		if (!parrot || !parrot->variables())
+			error("Tesoro: The kitchen has no parrot.");
+		game.startObjectScript("FICNUDO", "loro", parrot->variables(), *scene());
+		return 3;
+	}
+	if (_class == 8 && (item == 12 || item == 17)) {
+		game.startObjectScript(item == 12 ? "FIREVITALIZA" : "FIGUSANO", "loro", variables(), *scene());
+		return 3;
 	}
 	if (_class == 2) {
 		// Dick answers to some items and ignores the rest.
@@ -701,7 +745,9 @@ SceneObject *Scene::createObject(const SceneObjectRecord &record, const SceneGro
 		limits = "it works, but only some of the doors' special behaviour is ported";
 		break;
 	case 12:
-		object = new ScriptedObject(record, group, scene, now, record.parameters.size() > 1 ? record.parameters[1] : 0);
+	case 17:
+	case 20:
+		object = new ScriptedObject(record, group, scene, now, record.kind, record.parameters.size() > 1 ? record.parameters[1] : 0);
 		limits = "it works, but only some of the objects' special behaviour is ported";
 		break;
 	case 2:
@@ -719,8 +765,6 @@ SceneObject *Scene::createObject(const SceneObjectRecord &record, const SceneGro
 	case 15:
 		return new InventoryPageObject(record, group, scene, now);
 	case 9: // interactive objects
-	case 17:
-	case 20:
 		object = new InteractiveObject(record, group, scene, now);
 		limits = "it is drawn, but its behaviour is not implemented";
 		break;

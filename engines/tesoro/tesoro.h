@@ -95,6 +95,30 @@ private:
 	bool _inventoryOpen = false, _toggleInventory = false;
 	uint32 _lastLeftRelease = 0;
 	void toggleInventory();
+
+	// What the game keeps in Jim, and a scene change in progress: the screen fades to black (a number of
+	// steps of some milliseconds each), waits a little, and Jim is put in the new scene.
+	JimState _jimState;
+	struct Transition {
+		bool active = false;
+		uint32 start = 0;
+		uint steps = 4, delay = 100, pause = 0;
+		Common::SharedPtr<Scene> scene;
+		int32 x = 0, y = 0;
+		int direction = 0;       // the way Jim faces (0: as he is)
+		int jimShown = -1;       // -1 keep, 0 hide, 1 show
+		int setBusy = -1, setPhase = -1;
+		Script *script = nullptr;
+		bool rebind = false;
+		SceneObject *exitDoor = nullptr;
+		bool inputWas = true;
+		Common::Array<uint32> frame;   // the last frame, to be faded
+	} _transition;
+	void startTransition(const Common::SharedPtr<Scene> &scene, int32 x, int32 y, uint steps, uint delay, uint pause);
+	void updateTransition();
+	void drawTransition();
+	Common::SharedPtr<Scene> sharedScene(Scene &scene);
+	bool runNative(uint scriptType, uint ordinal, Script &script);
 	bool _leftClick = false, _rightClick = false;
 	// A menu of choices that a script is showing (_menuShown: a script asked for it on this frame; _menuSession: from the
 	// first menu of a conversation until its scripts end, during which the pointer is the arrow): the lines (as laid out on the last frame), where
@@ -192,7 +216,10 @@ private:
 	Scene *levelScene(int level) override;
 	Scene *interfaceScene() override { return _interface.get(); }
 	void startObjectScript(const char *block, const char *label, uint8 *variables, Scene &scene) override;
-	void transferJim(Scene &scene, int32 x, int32 y, int direction) override;
+	void transferJim(Scene &scene, int32 x, int32 y, int direction, bool fade = false, SceneObject *exitDoor = nullptr) override;
+	JimState &jimState() override { return _jimState; }
+	uint randomBelow(uint n) override { return _randomSource.getRandomNumber(n - 1); }
+	bool nativeBusy() const override { return _transition.active; }
 	int jimLevel() const override;
 	SceneObject *heldItem() const override { return _heldItem; }
 	void holdItem(SceneObject *item, int cursorFrame) override;

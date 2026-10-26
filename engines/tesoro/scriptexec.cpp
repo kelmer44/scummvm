@@ -47,6 +47,11 @@ void Script::start() {
 	execute();
 }
 
+void Script::rebindParticipants() {
+	for (uint i = 0; i < _participants.size(); ++i)
+		_participants[i] = _scene->find(_block.participants[i]);
+}
+
 SceneObject *Script::participant(int slot) {
 	if (slot < 1 || uint(slot) > _participants.size())
 		error("Tesoro: %s (%s): no participant %d.", _block.file.c_str(), _block.name.c_str(), slot);
@@ -194,6 +199,8 @@ void Script::execute() {
 
 		case ScriptOp::kNative:
 			_host.doNative(_block.nativeType, op.value, *this);
+			if (_host.nativeBusy())
+				return;
 			++_pc;
 			break;
 
@@ -255,6 +262,12 @@ void Script::update() {
 		_host.dialogueChoiceDone();
 		_pc = _choiceTargets[_chosen];
 		_chosen = -1;
+		break;
+
+	case ScriptOp::kNative:
+		if (_host.nativeBusy())
+			return;
+		++_pc;
 		break;
 
 	case ScriptOp::kRun:
