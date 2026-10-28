@@ -480,7 +480,7 @@ CharacterObject::CharacterObject(const SceneObjectRecord &record, const SceneGro
 	// four bytes). Its idle bank is the last one whose name starts with MIR (as in "mirar"), and
 	// the banks that show it talking are the ones that start with HAB (as in "hablar").
 	TalkConfig config;
-	config.colour = record.parameters[0] | (record.parameters[1] << 8);
+	config.color = record.parameters[0] | (record.parameters[1] << 8);
 	config.width = record.parameters[2] | (record.parameters[3] << 8);
 	for (uint i = 0; i < animationCount(); ++i) {
 		if (animationName(i).hasPrefix("MIR"))
@@ -784,7 +784,8 @@ SceneObject *Scene::createObject(const SceneObjectRecord &record, const SceneGro
 
 Scene::Scene(const SceneData &scene, uint32 now) {
 	// Rooms without a floor of their own (the map and the board games, for instance) have no entry
-	// point yet; the camera then stays where it is.
+	// point yet; the camera then stays where it is
+	// A new scene instance is created when loading a room, so we set the camera to the entry point if available.
 	if (findRoomEntry(scene, _entry)) {
 		_camera.setBounds(_entry.bounds);
 		_camera.setPosition(_entry.x, _entry.y);

@@ -59,14 +59,14 @@ public:
 	// colours each, indexed by three bits of each channel of the colour underneath.
 	void setShadowTable(const Bytes &table);
 
-	// Text that the whole screen is the stage for, centred on the screen.
+	// Text centered on the screen, for Jim's narration
 	void drawNarration(Graphics::Surface &surface, const Animation &font, const Common::String &text, uint16 colour);
 
-	// Lays text out in lines no wider than maxWidth, centres the block on (centreX, y) (or, if `centred` is off, starts
-	// it at y with the lines at the left edge of the box) and keeps it on the screen. The block is then moved down by
-	// `shift`; lastLineY gets the y of its last line before that, and with draw off nothing is drawn. A lineHeight of 0 is one and a half times the font's height.
-	void drawText(Graphics::Surface &surface, const Animation &font, const Common::String &text, uint16 colour, int centreX, int y, int maxWidth, int lineHeight = 0,
-	              bool centred = true, int shift = 0, int *lastLineY = nullptr, bool draw = true);
+	// Draws a block of text on the screen, handling line wrapping, centering, and vertical shifting.
+	// Text centered on (centerX, y) if centered is true, or starts at y if not.
+	// Shift is distance to move the block down after laying it out.
+	void drawText(Graphics::Surface &surface, const Animation &font, const Common::String &text, uint16 colour, int centerX, int y, int maxWidth, int lineHeight = 0,
+	              bool centered = true, int shift = 0, int *lastLineY = nullptr, bool draw = true);
 
 private:
 	// Darkens whatever is behind a shadow image.

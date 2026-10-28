@@ -57,14 +57,13 @@ public:
 	virtual void playSound(const Common::String &name) = 0;
 	virtual void playMusic(uint track) = 0;
 
-	// The native code behind DO lines, selected by the script type of the block. The script
-	// that runs it can be sent to another scene.
+	// The native code behind DO lines in scripts, selected by the script type of the block.
 	virtual void doNative(uint scriptType, uint ordinal, Script &script) = 0;
 	// A native action that takes time (a fade) is still going on; the script waits for it.
 	virtual bool nativeBusy() const = 0;
 	// Characters walk and turn; a walk ends by calling Script::actionDone.
 	virtual void walk(SceneObject &object, int x, int y, Script &waiter) = 0;
-	virtual void look(SceneObject &object, ScriptOp::Direction direction) = 0;
+	virtual void lookInDirection(SceneObject &object, ScriptOp::Direction direction) = 0;
 };
 
 // One started script block. It runs until an op has to wait, and update resumes it.
@@ -78,8 +77,7 @@ public:
 	// The object the script is waiting on has finished its action (a walk).
 	void actionDone() override;
 
-	// The scene that the script's objects are looked up in, and the scene of its sendmessage lines
-	// that name no other one. Native code moves a script to another scene with setScene.
+	// The "home" scene that hosts the script. A Sendmessage line with no specific scene refers to this one.
 	Scene &scene() const { return *_scene; }
 	void setScene(Scene &scene) { _scene = &scene; }
 	// Looks the participants up again in the scene (native code does this when it moves the script).

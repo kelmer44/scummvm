@@ -172,7 +172,7 @@ void Script::execute() {
 				_host.walk(*object, op.x, op.y, *this);
 				return;
 			case ScriptOp::kLook:
-				_host.look(*object, op.direction);
+				_host.lookInDirection(*object, op.direction);
 				break;
 			default: {
 				SceneMessage message;

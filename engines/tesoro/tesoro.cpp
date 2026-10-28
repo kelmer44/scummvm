@@ -90,11 +90,13 @@ Common::SharedPtr<Scene> TesoroEngine::loadScene(const Common::String &name) {
 }
 
 void TesoroEngine::placeJim(const Common::SharedPtr<Scene> &scene, int32 x, int32 y) {
-	_jim->leave();
+
+	// Have Jim leave any scene he might be in.
+	_jim->leaveScene();
 	_hovered.clear();
 	_pointerText.clear();
 	scene->addObject(_jim, 0);
-	_jim->place(*scene, x, y, _gameTime);
+	_jim->placeInScene(*scene, x, y, _gameTime);
 	scene->camera().setPosition(x, y);
 	scene->camera().setActor(_jim.get());
 	_currentScene = scene;
@@ -109,12 +111,17 @@ void TesoroEngine::init() {
 	_mainMenu = readMenu(_archive.read("PRINCIPAL.LVL"));
 	_newGameMenu = readMenu(_archive.read("NUEVO.LVL"));
 	_library.load(_archive);
+
+	// Load jim's animations eagerly
 	Common::Array<Common::SharedPtr<Animation>> jimBanks;
 	for (uint i = 0; i < JimObject::bankCount(); ++i)
 		jimBanks.push_back(Common::SharedPtr<Animation>(new Animation(readAnimation(_archive.read(JimObject::bankName(i))))));
+
+	// Restart all global pointers
 	_jim.reset(new JimObject(jimBanks));
 	_probe.reset(new PointerProbe());
 	_font.reset(new Animation(readAnimation(_archive.read("FUENTES.ANM"))));
+
 	_renderer.setShadowTable(_archive.read("TABLA1.TBL"));
 	// Temporary pointer until the original interface cursor is ported.
 	uint32 cursor[12 * 18] = {};
@@ -621,12 +628,11 @@ void TesoroEngine::draw() {
 			drawHotspots();
 		if (_speaking && _talker && _font && (ConfMan.getBool("subtitles") || ConfMan.getBool("speech_mute"))) {
 			if (_narration) {
-				_renderer.drawNarration(*_screen->surfacePtr(), *_font, _subtitle, _talker->narrationColour());
+				_renderer.drawNarration(*_screen->surfacePtr(), *_font, _subtitle, _talker->narrationColor());
 			} else {
-				// What a character says is centred above its head.
 				int32 x, y;
 				_talker->speechAnchor(_currentScene->camera().groupView(_talker->parallax()), x, y);
-				_renderer.drawText(*_screen->surfacePtr(), *_font, _subtitle, _talker->speechColour(), x, y, _talker->speechWidth());
+				_renderer.drawText(*_screen->surfacePtr(), *_font, _subtitle, _talker->speechColor(), x, y, _talker->speechWidth());
 			}
 		}
 		// The name of what the pointer is over is shown above it, 37 pixels up, in white.
@@ -680,6 +686,7 @@ void TesoroEngine::update() {
 	else if (_state == kAdventure) {
 		if (_jim->isWalking())
 			_jim->update(_gameTime);
+
 		updateSpeech();
 		updateTransition();
 		if (_inputAfterSpeech && !_speaking) {
@@ -721,6 +728,7 @@ void TesoroEngine::startAdventure() {
 	_movieHold = false;
 	_gameTime = 0;
 	_lastHostTime = _system->getMillis();
+
 	if (TestingShortcuts::kStartInOffice) {
 		// What the introduction leaves behind: the harbour's door active but hidden, the captain
 		// gone from the office and Jim at its door (native ordinal 5 and the end of FANPRESENT).
@@ -756,7 +764,8 @@ void TesoroEngine::startAdventure() {
 		_jim->look(ScriptOp::kLeft, _gameTime);
 		return;
 	}
-	// The game puts Jim at the floor's origin of the harbour, active and shown, before the script starts.
+
+
 	Common::SharedPtr<Scene> harbour = loadScene("PUERTO.LVL");
 	placeJim(harbour, harbour->entry().x, harbour->entry().y);
 	_state = kAdventure;
@@ -783,7 +792,7 @@ void TesoroEngine::stopAdventure() {
 		_probeScene = nullptr;
 	}
 	_scripts.clear();
-	_jim->leave();
+	_jim->leaveScene();
 	_mixer->stopHandle(_speech);
 	_mixer->stopHandle(_effect);
 	_speaking = false;
@@ -820,8 +829,7 @@ void TesoroEngine::updateScripts() {
 void TesoroEngine::updateSpeech() {
 	if (!_speaking)
 		return;
-	const bool done = _speechSkipped || (_speechMuted ? int32(_gameTime - _speechUntil) >= 0
-	                                                   : !_mixer->isSoundHandleActive(_speech));
+	const bool done = _speechSkipped || (_speechMuted ? int32(_gameTime - _speechUntil) >= 0 : !_mixer->isSoundHandleActive(_speech));
 	if (done) {
 		_speaking = false;
 		_subtitle.clear();
@@ -863,8 +871,7 @@ void TesoroEngine::startScript(const ScriptBlock &block, uint64 labelId, uint8 *
 }
 
 void TesoroEngine::startSpeech(SceneObject *speaker, const TextEntry &text, int option) {
-	// The narrator is Jim, who does not move his mouth.
-	SceneObject *talker = speaker ? speaker : _jim.get();
+	SceneObject *talker = speaker ? speaker : _jim.get(); // The narrator is Jim; no speaker means narrator.
 	if (!talker->canTalk())
 		error("Tesoro: %s cannot talk.", text.name.c_str());
 	_mixer->stopHandle(_speech);
@@ -1011,7 +1018,7 @@ void TesoroEngine::walk(SceneObject &object, int x, int y, Script &waiter) {
 	_jim->startWalk(x, y, &waiter, _gameTime);
 }
 
-void TesoroEngine::look(SceneObject &object, ScriptOp::Direction direction) {
+void TesoroEngine::lookInDirection(SceneObject &object, ScriptOp::Direction direction) {
 	object.turn(direction, _gameTime);
 }
 

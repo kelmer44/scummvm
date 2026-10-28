@@ -31,6 +31,7 @@ const char *const kBanks[] = {
 	"JIMHABIZ.ANM", "JIMHABDER.ANM", "JIMQUIETO.ANM", "JIMARRIBA.ANM", "JIMABAJO.ANM",
 	"JIMIZQUIERDA.ANM", "JIMDERECHA.ANM", "JIMHABAB.ANM", "JIMHABAR.ANM"
 };
+
 const uint kIdleBank = 2;
 const uint kWalkBank = 2; // plus the direction: up is 1, down 2, left 3, right 4
 
@@ -49,12 +50,12 @@ JimObject::JimObject(const Common::Array<Common::SharedPtr<Animation>> &banks)
 	: SceneObject(0xffff, encodeName("JIM"), banks, 350, 20, kDepth) {
 	if (banks.size() != ARRAYSIZE(kBanks))
 		error("Tesoro: Jim needs %u animation banks.", (uint)ARRAYSIZE(kBanks));
-	// His words are yellow and wrapped at 300 pixels, what the narrator says is blue, and he talks
+	// His words are yellow and wrapped at 300 pixels, when narrating its blue, and he talks
 	// in the bank that faces the way he looks: left, right, down, then up.
 	TalkConfig config;
-	config.colour = 0xffc0;
+	config.color = 0xffc0;
 	config.width = 300;
-	config.narrationColour = 0x1f;
+	config.narrationColor = 0x1f;
 	config.banks.push_back(0);
 	config.banks.push_back(1);
 	config.banks.push_back(7);
@@ -74,7 +75,7 @@ int JimObject::floorScale() const {
 	return floor ? floor->scaleAt(x(), y()) : 256;
 }
 
-void JimObject::place(Scene &scene, int32 x, int32 y, uint32 now) {
+void JimObject::placeInScene(Scene &scene, int32 x, int32 y, uint32 now) {
 	_scene = &scene;
 	_walking = false;
 	_waiter = nullptr;
@@ -85,7 +86,7 @@ void JimObject::place(Scene &scene, int32 x, int32 y, uint32 now) {
 	_scale = floorScale();
 }
 
-void JimObject::leave() {
+void JimObject::leaveScene() {
 	if (_scene)
 		_scene->removeObject(this);
 	_scene = nullptr;
@@ -117,7 +118,7 @@ bool JimObject::backSprite(const SceneView &view, SceneSprite &sprite) const {
 
 void JimObject::speechAnchor(const SceneView &view, int32 &outX, int32 &outY) const {
 	SceneObject::speechAnchor(view, outX, outY);
-	// His words sit a fixed height above his feet, less the size of his picture on the floor.
+	// His words sit a fixed height above his feet, minus the size of his picture on the floor.
 	const Frame *frame = selectedPlayer().currentFrame();
 	const int32 hitY = frame ? frame->hitY : 0;
 	outY = (0xbe - ((hitY * _scale) >> 8)) - y() + view.y;
@@ -134,7 +135,7 @@ void JimObject::look(ScriptOp::Direction direction, uint32 now) {
 void JimObject::startWalk(int32 x, int32 y, ActionWaiter *waiter, uint32 now) {
 	_walking = false;
 	if (!_scene || !_scene->floor()) {
-		// Without a floor he does not walk, and the script that waits for him goes on.
+		// Without a floor Jim does not walk, and the script that waits for him goes on.
 		if (waiter) {
 			look(_direction, now);
 			waiter->actionDone();
@@ -149,7 +150,7 @@ void JimObject::startWalk(int32 x, int32 y, ActionWaiter *waiter, uint32 now) {
 	_targetY = y;
 	_waiter = waiter;
 
-	// He faces the way that he has farther to go.
+	// Jim faces the way that he has a bigger distance to walk.
 	const int32 dx = _targetX - JimObject::x(), dy = _targetY - JimObject::y();
 	if (ABS(dy) < ABS(dx))
 		_direction = dx >= 0 ? ScriptOp::kRight : ScriptOp::kLeft;
@@ -190,7 +191,7 @@ void JimObject::update(uint32 now) {
 		moveTo(_targetX, _targetY);
 		_walking = false;
 		if (_waiter) {
-			// The script goes on, after he turns to face the way that he walked. His scale
+			// The script goes on, after Jim turns to face the way that he walked. His scale
 			// is not refreshed on this frame.
 			ActionWaiter *waiter = _waiter;
 			_waiter = nullptr;

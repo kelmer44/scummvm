@@ -38,8 +38,8 @@ public:
 
 	// Stands Jim at a point of the scene's floor. The engine adds him to a group of the
 	// scene first.
-	void place(Scene &scene, int32 x, int32 y, uint32 now);
-	void leave();
+	void placeInScene(Scene &scene, int32 x, int32 y, uint32 now);
+	void leaveScene();
 
 	// Changes jim's direction
 	void look(ScriptOp::Direction direction, uint32 now);

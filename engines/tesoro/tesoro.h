@@ -71,7 +71,7 @@ private:
 	uint32 _movieHoldUntil = 0;
 
 	SceneRenderer _renderer;
-	// Every scene that has been loaded stays loaded, with whatever state the game left in it.
+	// Scenes are cached as they are loaded, with whatever state the game left in it.
 	Common::HashMap<Common::String, Common::SharedPtr<Scene>> _scenes;
 	Common::SharedPtr<Scene> _currentScene;
 	Common::SharedPtr<JimObject> _jim;
@@ -148,13 +148,15 @@ private:
 	Audio::SoundHandle _speech, _effect;
 	Common::String _subtitle;
 	bool _speaking = false, _speechMuted = false, _speechSkipped = false;
-	// Who is talking. The narrator is Jim, with his mouth closed and the text on the middle of the screen.
+
+	// Who is talking. The narrator is Jim.
 	SceneObject *_talker = nullptr;
 	bool _narration = false;
 	uint32 _speechUntil = 0;
 
 	// Loads a scene by file name the first time it is asked for.
 	Common::SharedPtr<Scene> loadScene(const Common::String &name);
+
 	// Moves Jim into a scene, at a position, and makes it the scene that is shown.
 	void placeJim(const Common::SharedPtr<Scene> &scene, int32 x, int32 y);
 	void startAdventure();
@@ -163,9 +165,10 @@ private:
 	void updateScripts();
 	Audio::SeekableAudioStream *openWav(const Common::String &name);
 
-	// ScriptHost
+	// ScriptHost functions
 	uint32 gameTime() const override { return _gameTime; }
 	Common::RandomSource &randomSource() override { return _randomSource; }
+	// returns the current scene or loads given scene depending on the scope and level.
 	Scene *scene(ScriptOp::Scope scope, int level) override;
 	void setInputEnabled(bool enabled) override;
 	void startScript(const ScriptBlock &block, uint64 labelId, uint8 *variables, Scene &scene) override;
@@ -180,7 +183,7 @@ private:
 	void playMusic(uint track) override;
 	void doNative(uint scriptType, uint ordinal, Script &script) override;
 	void walk(SceneObject &object, int x, int y, Script &waiter) override;
-	void look(SceneObject &object, ScriptOp::Direction direction) override;
+	void lookInDirection(SceneObject &object, ScriptOp::Direction direction) override;
 
 	void init();
 	bool startMovie(uint number, State state);

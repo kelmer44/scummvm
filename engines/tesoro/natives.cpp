@@ -157,7 +157,7 @@ bool TesoroEngine::runNative(uint scriptType, uint ordinal, Script &script) {
 			moveNow(kCubierta, 0x1e, 0x7d, false);
 			return true;
 		case 2:
-			_jim->place(*_currentScene, 0x1b3, 0x2d, _gameTime);
+			_jim->placeInScene(*_currentScene, 0x1b3, 0x2d, _gameTime);
 			_jim->show(true);
 			return true;
 		}
