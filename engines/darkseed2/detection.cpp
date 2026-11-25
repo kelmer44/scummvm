@@ -31,9 +31,10 @@
 
 const DebugChannelDef DarkSeed2MetaEngineDetection::debugFlagList[] = {
 	{ DarkSeed2::kDebugGraphics, "Graphics", "Graphics debug level" },
+	{ DarkSeed2::kDebugSystem, "System", "System debug level" },
 	{ DarkSeed2::kDebugPath, "Path", "Pathfinding debug level" },
 	{ DarkSeed2::kDebugFilePath, "FilePath", "File path debug level" },
-	{ DarkSeed2::kDebugScan, "Scan", "Scan for unrecognised games" },
+	{ DarkSeed2::kDebugSound, "Sound", "Sound debug level" },
 	{ DarkSeed2::kDebugScript, "Script", "Enable debug script dump" },
 	DEBUG_CHANNEL_END
 };

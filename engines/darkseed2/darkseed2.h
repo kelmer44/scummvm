@@ -33,6 +33,7 @@
 #include "engines/engine.h"
 #include "engines/savestate.h"
 #include "graphics/screen.h"
+#include "darkseed2/options.h"
 
 #include "darkseed2/detection.h"
 
@@ -45,13 +46,17 @@ private:
 	const ADGameDescription *_gameDescription;
 	Common::RandomSource _randomSource;
 
+	bool init(int32 width, int32 height);
 	bool initGraphics(int32 width, int32 height, const Graphics::PixelFormat *format);
 
 protected:
 	// Engine APIs
 	Common::Error run() override;
+	void syncSoundSettings() override;
 public:
 	Graphics::Screen *_screen = nullptr;
+	// Subsystems
+	Options           *_options;
 public:
 	DarkSeed2Engine(OSystem *syst, const ADGameDescription *gameDesc);
 	~DarkSeed2Engine() override;

@@ -4,7 +4,8 @@ MODULE_OBJS = \
 	darkseed2.o \
 	console.o \
 	resources.o \
-	metaengine.o
+	metaengine.o \
+	options.o
 
 # This module can be built as a plugin
 ifeq ($(ENABLE_DARKSEED2), DYNAMIC_PLUGIN)

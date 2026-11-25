@@ -42,6 +42,7 @@ DarkSeed2Engine::DarkSeed2Engine(OSystem *syst, const ADGameDescription *gameDes
 
 DarkSeed2Engine::~DarkSeed2Engine() {
 	delete _screen;
+	delete _options;
 }
 
 uint32 DarkSeed2Engine::getFeatures() const {
@@ -86,11 +87,21 @@ Common::Error DarkSeed2Engine::run() {
 	return Common::kNoError;
 }
 
+void DarkSeed2Engine::syncSoundSettings() {
+	_options->syncSettings();
+}
+
 bool DarkSeed2Engine::initGraphics(int32 width, int32 height, const Graphics::PixelFormat *format) {
-	debug(-1, "Setting up graphics...");
+	debug(kDebugSystem, "Setting up graphics...");
 
 	::initGraphics(width, height, format);
 
+	return true;
+}
+
+bool DarkSeed2Engine::init(int32 width, int32 height) {
+
+	_options        = new Options();
 	return true;
 }
 
