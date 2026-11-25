@@ -36,6 +36,7 @@
 #include "darkseed2/options.h"
 
 #include "darkseed2/detection.h"
+#include "darkseed2/resources.h"
 
 namespace DarkSeed2 {
 
@@ -49,6 +50,9 @@ private:
 	bool init(int32 width, int32 height);
 	bool initGraphics(int32 width, int32 height, const Graphics::PixelFormat *format);
 
+	Common::Language getLanguage() const;
+	Common::Platform getPlatform() const;
+
 protected:
 	// Engine APIs
 	Common::Error run() override;
@@ -57,6 +61,10 @@ public:
 	Graphics::Screen *_screen = nullptr;
 	// Subsystems
 	Options           *_options;
+	Resources         *_resources;
+
+
+	bool isWindowsPC() const;
 public:
 	DarkSeed2Engine(OSystem *syst, const ADGameDescription *gameDesc);
 	~DarkSeed2Engine() override;

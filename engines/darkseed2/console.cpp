@@ -20,11 +20,13 @@
  */
 
 #include "darkseed2/console.h"
+#include "darkseed2/darkseed2.h"
 
 namespace DarkSeed2 {
 
 Console::Console() : GUI::Debugger() {
 	registerCmd("test",   WRAP_METHOD(Console, Cmd_test));
+	registerCmd("resList",   WRAP_METHOD(Console, Cmd_resList));
 }
 
 Console::~Console() {
@@ -32,6 +34,15 @@ Console::~Console() {
 
 bool Console::Cmd_test(int argc, const char **argv) {
 	debugPrintf("Test\n");
+	return true;
+}
+
+bool Console::Cmd_resList(int argc, const char **argv) {
+	debugPrintf("Resource List\n");
+	const Resources *res = g_engine->_resources;
+
+	debugPrintf("Glue files: %d\n", res->getArchiveCount());
+	debugPrintf("Resources: %d\n", res->getResourceCount());
 	return true;
 }
 

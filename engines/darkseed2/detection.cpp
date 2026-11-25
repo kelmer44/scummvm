@@ -30,12 +30,19 @@
 #include "darkseed2/detection_tables.h"
 
 const DebugChannelDef DarkSeed2MetaEngineDetection::debugFlagList[] = {
-	{ DarkSeed2::kDebugGraphics, "Graphics", "Graphics debug level" },
-	{ DarkSeed2::kDebugSystem, "System", "System debug level" },
-	{ DarkSeed2::kDebugPath, "Path", "Pathfinding debug level" },
-	{ DarkSeed2::kDebugFilePath, "FilePath", "File path debug level" },
-	{ DarkSeed2::kDebugSound, "Sound", "Sound debug level" },
-	{ DarkSeed2::kDebugScript, "Script", "Enable debug script dump" },
+	{ DarkSeed2::kDebugResources,    "Resources",    "Resource handling debug level" },
+	{ DarkSeed2::kDebugGraphics,     "Graphics",     "Graphics debug level" },
+	{ DarkSeed2::kDebugMusic,        "Music",        "Music debug level" },
+	{ DarkSeed2::kDebugSound,        "Sound",        "Sound debug level" },
+	{ DarkSeed2::kDebugTalk,         "Talk",         "Talk debug level" },
+	{ DarkSeed2::kDebugMovie,        "Movie",        "Movie debug level" },
+	{ DarkSeed2::kDebugScript,       "Script",       "Script debug level" },
+	{ DarkSeed2::kDebugRooms,        "Rooms",        "Rooms debug level" },
+	{ DarkSeed2::kDebugObjects,      "Objects",      "Objects debug level" },
+	{ DarkSeed2::kDebugConversation, "Conversation", "Conversation debug level" },
+	{ DarkSeed2::kDebugOpcodes,      "Opcodes",      "Script functions debug level" },
+	{ DarkSeed2::kDebugRoomConf,     "RoomConf",     "Room config debug level" },
+	{ DarkSeed2::kDebugGameflow,     "Gameflow",     "Gameflow debug level" },
 	DEBUG_CHANNEL_END
 };
 

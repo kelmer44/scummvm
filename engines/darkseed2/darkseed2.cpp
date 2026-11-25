@@ -19,10 +19,7 @@
  *
  */
 
-#include "darkseed2/darkseed2.h"
 #include "graphics/framelimiter.h"
-#include "darkseed2/detection.h"
-#include "darkseed2/console.h"
 #include "common/scummsys.h"
 #include "common/config-manager.h"
 #include "common/debug-channels.h"
@@ -31,7 +28,13 @@
 #include "engines/util.h"
 #include "graphics/paletteman.h"
 
+#include "darkseed2/darkseed2.h"
+#include "darkseed2/detection.h"
+#include "darkseed2/console.h"
+
 namespace DarkSeed2 {
+
+static const char *kResourceIndex = "gfile.hdr";
 
 DarkSeed2Engine *g_engine;
 
@@ -43,6 +46,7 @@ DarkSeed2Engine::DarkSeed2Engine(OSystem *syst, const ADGameDescription *gameDes
 DarkSeed2Engine::~DarkSeed2Engine() {
 	delete _screen;
 	delete _options;
+	delete _resources;
 }
 
 uint32 DarkSeed2Engine::getFeatures() const {
@@ -59,6 +63,10 @@ Common::Error DarkSeed2Engine::run() {
 
 	if (!initGraphics(width, height, &format))
 		return Common::kUnknownError;
+
+	if (!init(width, height))
+		return Common::kUnknownError;
+
 
 	_screen = new Graphics::Screen(width, height, g_system->getScreenFormat());
 
@@ -92,7 +100,7 @@ void DarkSeed2Engine::syncSoundSettings() {
 }
 
 bool DarkSeed2Engine::initGraphics(int32 width, int32 height, const Graphics::PixelFormat *format) {
-	debug(kDebugSystem, "Setting up graphics...");
+	debugC(1, kDebugGraphics, "Setting up graphics...");
 
 	::initGraphics(width, height, format);
 
@@ -102,6 +110,16 @@ bool DarkSeed2Engine::initGraphics(int32 width, int32 height, const Graphics::Pi
 bool DarkSeed2Engine::init(int32 width, int32 height) {
 
 	_options        = new Options();
+	_resources      = new Resources();
+
+	if(isWindowsPC()) {
+
+		if(!_resources->index(kResourceIndex)) {
+			warning("DarkSeed2Engine::init(): Couldn't index resources");
+			return false;
+		}
+	}
+
 	return true;
 }
 
@@ -114,6 +132,18 @@ Common::Error DarkSeed2Engine::syncGame(Common::Serializer &s) {
 	s.syncAsUint32LE(dummy);
 
 	return Common::kNoError;
+}
+
+Common::Language DarkSeed2Engine::getLanguage() const {
+	return _gameDescription->language;
+}
+
+Common::Platform DarkSeed2Engine::getPlatform() const {
+	return _gameDescription->platform;
+}
+
+bool DarkSeed2Engine::isWindowsPC() const {
+	return getPlatform() == Common::kPlatformWindows;
 }
 
 } // End of namespace DarkSeed2

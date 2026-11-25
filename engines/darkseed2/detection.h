@@ -27,13 +27,19 @@
 namespace DarkSeed2 {
 
 enum DarkSeed2DebugChannels {
-	kDebugGraphics = 1,
-	kDebugSystem,
-	kDebugResources,
-	kDebugScript,
-	kDebugFilePath,
-	kDebugSound,
-	kDebugPath
+	kDebugResources    = 1 <<  0,
+	kDebugGraphics     = 1 <<  1,
+	kDebugMusic        = 1 <<  2,
+	kDebugSound        = 1 <<  3,
+	kDebugTalk         = 1 <<  4,
+	kDebugMovie        = 1 <<  5,
+	kDebugScript       = 1 <<  6,
+	kDebugRooms        = 1 <<  7,
+	kDebugObjects      = 1 <<  8,
+	kDebugConversation = 1 <<  9,
+	kDebugOpcodes      = 1 << 10,
+	kDebugRoomConf     = 1 << 11,
+	kDebugGameflow     = 1 << 12
 };
 
 extern const PlainGameDescriptor darkseed2Games[];
